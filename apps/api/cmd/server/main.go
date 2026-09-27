@@ -161,6 +161,6 @@ func main() {
 	})
 	app.Use("/api/v1/addon/pair", publicLimit(20))
 	app.Use("/api/v1/addon/prepare", publicLimit(60))
-	httpapi.RegisterHandlers(app.Group("/api/v1"), httpapi.NewStrictHandler(server, []httpapi.StrictMiddlewareFunc{server.Middleware()}))
+	httpapi.RegisterRoutes(app.Group("/api/v1"), server)
 	log.Fatal(app.Listen(":8080"))
 }

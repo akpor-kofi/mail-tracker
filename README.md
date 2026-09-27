@@ -45,12 +45,13 @@ The dashboard, Better Auth, API, pixel URL, and OAuth callback share one domain 
 ```sh
 pnpm install
 pnpm generate
+pnpm generate:go
 pnpm typecheck
 pnpm build
 cd apps/api && GOTOOLCHAIN=go1.25.1 go test ./...
 ```
 
-The API requires the environment variables in `infra/.env.example`; point `DATABASE_URL` at a local PostgreSQL instance. Better Auth schema migrations run on dashboard container startup. The Go service applies its own numbered SQL migrations on startup. The source OpenAPI file is [`packages/api-contract/openapi.yaml`](packages/api-contract/openapi.yaml). Run `pnpm generate` and the pinned `oapi-codegen` command in [architecture](docs/architecture.md) after changing it.
+The API requires the environment variables in `infra/.env.example`; point `DATABASE_URL` at a local PostgreSQL instance. Better Auth schema migrations run on dashboard container startup. The Go service applies its own numbered SQL migrations on startup. The source OpenAPI file is [`packages/api-contract/openapi.yaml`](packages/api-contract/openapi.yaml). Run `pnpm generate` and `pnpm generate:go` after changing it; see [architecture](docs/architecture.md) for the generated package layout.
 
 The dashboard uses shadcn/ui components and a small theme in `apps/dashboard/src/app/styles.css`. Run `pnpm dlx shadcn@latest add COMPONENT` from `apps/dashboard` when adding another shared control; its configuration is in `apps/dashboard/components.json`.
 

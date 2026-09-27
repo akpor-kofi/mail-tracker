@@ -20,6 +20,7 @@ paths:
                 $ref: '#/components/schemas/Health'
   /mailboxes:
     get:
+      tags: [mailboxes]
       operationId: listMailboxes
       responses:
         '200':
@@ -31,6 +32,7 @@ paths:
                 items: { $ref: '#/components/schemas/Mailbox' }
   /mailboxes/connect:
     post:
+      tags: [mailboxes]
       operationId: startMailboxConnect
       responses:
         '200':
@@ -40,6 +42,7 @@ paths:
               schema: { $ref: '#/components/schemas/ConnectURL' }
   /mailboxes/{mailboxId}:
     delete:
+      tags: [mailboxes]
       operationId: removeMailbox
       parameters:
         - { name: mailboxId, in: path, required: true, schema: { type: string } }
@@ -47,6 +50,7 @@ paths:
         '204': { description: removed }
   /drafts:
     get:
+      tags: [correspondence]
       operationId: listDrafts
       responses:
         '200':
@@ -55,6 +59,7 @@ paths:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/Draft' } }
     post:
+      tags: [correspondence]
       operationId: saveDraft
       requestBody:
         required: true
@@ -69,6 +74,7 @@ paths:
               schema: { $ref: '#/components/schemas/Draft' }
   /drafts/{draftId}:
     get:
+      tags: [correspondence]
       operationId: getDraft
       parameters:
         - { name: draftId, in: path, required: true, schema: { type: string } }
@@ -79,6 +85,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Draft' }
     delete:
+      tags: [correspondence]
       operationId: deleteDraft
       parameters:
         - { name: draftId, in: path, required: true, schema: { type: string } }
@@ -86,6 +93,7 @@ paths:
         '204': { description: deleted }
   /send:
     post:
+      tags: [correspondence]
       operationId: sendTrackedMessage
       requestBody:
         required: true
@@ -133,6 +141,7 @@ paths:
               schema: { $ref: '#/components/schemas/AttachmentResult' }
   /conversations:
     get:
+      tags: [tracking]
       operationId: listConversations
       parameters:
         - { name: mailboxId, in: query, schema: { type: string } }
@@ -144,6 +153,7 @@ paths:
               schema: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
   /conversations/{conversationId}:
     get:
+      tags: [tracking]
       operationId: getConversation
       parameters:
         - { name: conversationId, in: path, required: true, schema: { type: string } }
@@ -155,6 +165,7 @@ paths:
               schema: { $ref: '#/components/schemas/ConversationDetail' }
   /pairing-codes:
     post:
+      tags: [tracking]
       operationId: createPairingCode
       requestBody:
         required: true
@@ -169,6 +180,7 @@ paths:
               schema: { $ref: '#/components/schemas/PairingCode' }
   /addon/pair:
     post:
+      tags: [tracking]
       operationId: pairAddon
       security: []
       requestBody:
@@ -184,6 +196,7 @@ paths:
               schema: { $ref: '#/components/schemas/AddonPairResult' }
   /addon/prepare:
     post:
+      tags: [tracking]
       operationId: prepareAddonDraft
       security: []
       requestBody:

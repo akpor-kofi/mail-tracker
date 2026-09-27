@@ -1,0 +1,8 @@
+package: correspondence
+generate:
+  fiber-v3-server: true
+  strict-server: true
+  models: true
+output: internal/httpapi/correspondence/generated.go
+output-options:
+  include-tags: [correspondence]

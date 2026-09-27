@@ -19,9 +19,8 @@ jobs:
           version: '11.6.0'
       - run: pnpm install --frozen-lockfile
       - run: pnpm generate
-      - run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config oapi-codegen.yaml ../../packages/api-contract/openapi.yaml
-        working-directory: apps/api
-      - run: git diff --exit-code -- apps/api/internal/httpapi/generated.go packages/api-client/src/schema.d.ts
+      - run: pnpm generate:go
+      - run: git diff --exit-code -- apps/api/internal/httpapi packages/api-client/src/schema.d.ts
       - run: go test ./...
         working-directory: apps/api
       - run: pnpm typecheck

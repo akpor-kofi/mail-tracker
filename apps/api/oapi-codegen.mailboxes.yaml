@@ -1,0 +1,8 @@
+package: mailboxes
+generate:
+  fiber-v3-server: true
+  strict-server: true
+  models: true
+output: internal/httpapi/mailboxes/generated.go
+output-options:
+  include-tags: [mailboxes]

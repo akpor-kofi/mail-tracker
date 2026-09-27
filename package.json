@@ -7,7 +7,8 @@
     "build": "pnpm --filter api-client build && pnpm --filter dashboard build",
     "typecheck": "pnpm -r typecheck",
     "generate": "pnpm --filter api-client generate",
-    "check:generated": "pnpm generate && git diff --exit-code -- apps/api/internal/httpapi/generated.go packages/api-client/src/schema.d.ts"
+    "generate:go": "sh scripts/generate-go-api.sh",
+    "check:generated": "pnpm generate && pnpm generate:go && git diff --exit-code -- apps/api/internal/httpapi packages/api-client/src/schema.d.ts"
   },
   "devDependencies": {
     "pg": "^8.23.0",

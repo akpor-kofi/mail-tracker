@@ -14,13 +14,12 @@ Gmail add-on ── verified Google identity token ── Go API
 
 `apps/dashboard` owns login sessions and renders the Next.js UI. Its Better Auth JWT plugin issues a short-lived token. The browser attaches it to Go requests. Go fetches Better Auth's public JWKS, verifies Ed25519 signature, issuer, audience, expiration and the configured owner email. The browser keeps server data in TanStack Query. It listens to a Fiber server-sent event stream and refetches after activity or reconnection.
 
-`apps/api` is a Go 1.25 module. `internal/accounts`, `internal/mailboxes`, `internal/correspondence`, and `internal/tracking` hold the domains. Domain rules have no HTTP or PostgreSQL imports. Application packages own interfaces for repositories, Gmail sending, files, and event delivery. `adapters` provide PostgreSQL, Gmail, local files, and the in-memory stream broker. Generated Fiber request/response types stay in `internal/httpapi`. The pixel, OAuth callback, attachment upload, and stream routes are direct Fiber routes.
+`apps/api` is a Go 1.25 module. `internal/accounts`, `internal/mailboxes`, `internal/correspondence`, and `internal/tracking` hold the domains. Domain rules have no HTTP or PostgreSQL imports. Application packages own interfaces for repositories, Gmail sending, files, and event delivery. `adapters` provide PostgreSQL, Gmail, local files, and the in-memory stream broker. Generated Fiber request/response types live in separate `internal/httpapi/{mailboxes,correspondence,tracking}` packages. Handwritten handlers live in the parent `httpapi` package, with one file per domain. The pixel, health, OAuth callback, attachment upload, and stream routes are direct Fiber routes.
 
-`packages/api-contract/openapi.yaml` is the contract. Generate Go with:
+`packages/api-contract/openapi.yaml` is the single contract. Operation tags select each domain's generated package. Generate Go from the repository root with:
 
 ```sh
-cd apps/api
-GOTOOLCHAIN=go1.25.1 go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config oapi-codegen.yaml ../../packages/api-contract/openapi.yaml
+pnpm generate:go
 ```
 
 Generate TypeScript with `pnpm generate` from the root. CI regenerates both and rejects drift.
