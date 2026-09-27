@@ -279,6 +279,7 @@ export interface components {
         Delivery: {
             id: string;
             recipients: string[];
+            replyAllRecipients: string[];
             /** @enum {string} */
             status: "pending" | "sent" | "failed" | "unknown" | "prepared";
             error?: string;

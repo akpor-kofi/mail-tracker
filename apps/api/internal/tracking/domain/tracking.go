@@ -9,6 +9,7 @@ type Conversation struct {
 type Delivery struct {
 	ID                            string
 	Recipients                    []string
+	ReplyAllRecipients            []string
 	Status, Error, GmailMessageID string
 	GmailThreadID                 string
 	RFCMessageID                  string

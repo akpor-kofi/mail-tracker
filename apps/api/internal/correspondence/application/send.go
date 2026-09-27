@@ -14,14 +14,15 @@ import (
 )
 
 type Delivery struct {
-	ID             string
-	Recipients     []string
-	Status         string
-	Error          string
-	GmailMessageID string
-	GmailThreadID  string
-	RFCMessageID   string
-	PixelToken     string
+	ID                 string
+	Recipients         []string
+	ReplyAllRecipients []string
+	Status             string
+	Error              string
+	GmailMessageID     string
+	GmailThreadID      string
+	RFCMessageID       string
+	PixelToken         string
 }
 type Result struct {
 	ConversationID string
@@ -67,7 +68,7 @@ func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Dra
 		if _, err := rand.Read(tokenBytes); err != nil {
 			return Result{}, err
 		}
-		deliveries[i] = Delivery{ID: uuid.NewString(), Recipients: p.Recipients, Status: "pending", PixelToken: base64.RawURLEncoding.EncodeToString(tokenBytes)}
+		deliveries[i] = Delivery{ID: uuid.NewString(), Recipients: p.Recipients, ReplyAllRecipients: append(append([]string{}, p.To...), p.Cc...), Status: "pending", PixelToken: base64.RawURLEncoding.EncodeToString(tokenBytes)}
 	}
 	cid, existing, err := s.Repo.CreateAttempt(ctx, owner, key, d, mode, deliveries)
 	if err != nil {

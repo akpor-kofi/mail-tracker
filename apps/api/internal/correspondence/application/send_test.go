@@ -93,3 +93,18 @@ func TestConfirmedSendDeletesDraft(t *testing.T) {
 		t.Fatal("confirmed draft was retained")
 	}
 }
+
+func TestReplyAllExcludesBcc(t *testing.T) {
+	repo := &fakeRepo{}
+	sender := &fakeSender{}
+	service := Service{Repo: repo, Sender: sender, PublicURL: "https://example.com"}
+	d := domain.Draft{MailboxID: "m", To: []string{"to@example.com"}, Cc: []string{"cc@example.com"}, Bcc: []string{"private@example.com"}, Subject: "Hi"}
+	result, err := service.Send(context.Background(), "owner", "key", "shared", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := result.Deliveries[0].ReplyAllRecipients
+	if len(got) != 2 || got[0] != "to@example.com" || got[1] != "cc@example.com" {
+		t.Fatalf("reply all leaked or omitted recipients: %v", got)
+	}
+}

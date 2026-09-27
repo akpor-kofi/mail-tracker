@@ -52,12 +52,12 @@ func convOut(c trackingdomain.Conversation) Conversation {
 	return Conversation{Id: c.ID, MailboxId: c.MailboxID, Subject: c.Subject, Status: c.Status, OpenStatus: ConversationOpenStatus(c.OpenStatus), UpdatedAt: c.UpdatedAt}
 }
 func deliveryOut(d corrapp.Delivery) Delivery {
-	return Delivery{Id: d.ID, Recipients: d.Recipients, Status: DeliveryStatus(d.Status), Error: ptr(d.Error), GmailMessageId: ptr(d.GmailMessageID), GmailThreadId: ptr(d.GmailThreadID), RfcMessageId: ptr(d.RFCMessageID)}
+	return Delivery{Id: d.ID, Recipients: d.Recipients, ReplyAllRecipients: d.ReplyAllRecipients, Status: DeliveryStatus(d.Status), Error: ptr(d.Error), GmailMessageId: ptr(d.GmailMessageID), GmailThreadId: ptr(d.GmailThreadID), RfcMessageId: ptr(d.RFCMessageID)}
 }
 func detailOut(d trackingdomain.Detail) ConversationDetail {
 	out := ConversationDetail{Id: d.Conversation.ID, MailboxId: d.Conversation.MailboxID, Subject: d.Conversation.Subject, Status: d.Conversation.Status, OpenStatus: ConversationDetailOpenStatus(d.Conversation.OpenStatus), UpdatedAt: d.Conversation.UpdatedAt, Deliveries: []Delivery{}, Events: []OpenEvent{}}
 	for _, x := range d.Deliveries {
-		out.Deliveries = append(out.Deliveries, Delivery{Id: x.ID, Recipients: x.Recipients, Status: DeliveryStatus(x.Status), Error: ptr(x.Error), GmailMessageId: ptr(x.GmailMessageID), GmailThreadId: ptr(x.GmailThreadID), RfcMessageId: ptr(x.RFCMessageID)})
+		out.Deliveries = append(out.Deliveries, Delivery{Id: x.ID, Recipients: x.Recipients, ReplyAllRecipients: x.ReplyAllRecipients, Status: DeliveryStatus(x.Status), Error: ptr(x.Error), GmailMessageId: ptr(x.GmailMessageID), GmailThreadId: ptr(x.GmailThreadID), RfcMessageId: ptr(x.RFCMessageID)})
 	}
 	for _, e := range d.Events {
 		out.Events = append(out.Events, OpenEvent{DeliveryId: e.DeliveryID, At: e.At})

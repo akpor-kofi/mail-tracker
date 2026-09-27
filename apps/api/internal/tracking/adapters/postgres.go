@@ -57,14 +57,14 @@ func (r Postgres) Detail(ctx context.Context, owner, id string) (domain.Detail, 
 	if err != nil {
 		return d, err
 	}
-	rows, err := r.Pool.Query(ctx, `SELECT id,recipients,status,COALESCE(error,''),COALESCE(gmail_message_id,''),COALESCE(gmail_thread_id,''),COALESCE(rfc_message_id,'') FROM deliveries WHERE conversation_id=$1 ORDER BY created_at,id`, id)
+	rows, err := r.Pool.Query(ctx, `SELECT id,recipients,reply_all_recipients,status,COALESCE(error,''),COALESCE(gmail_message_id,''),COALESCE(gmail_thread_id,''),COALESCE(rfc_message_id,'') FROM deliveries WHERE conversation_id=$1 ORDER BY created_at,id`, id)
 	if err != nil {
 		return d, err
 	}
 	d.Deliveries = []domain.Delivery{}
 	for rows.Next() {
 		var x domain.Delivery
-		if err := rows.Scan(&x.ID, &x.Recipients, &x.Status, &x.Error, &x.GmailMessageID, &x.GmailThreadID, &x.RFCMessageID); err != nil {
+		if err := rows.Scan(&x.ID, &x.Recipients, &x.ReplyAllRecipients, &x.Status, &x.Error, &x.GmailMessageID, &x.GmailThreadID, &x.RFCMessageID); err != nil {
 			rows.Close()
 			return d, err
 		}

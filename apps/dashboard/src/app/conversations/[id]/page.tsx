@@ -70,7 +70,7 @@ export default function ConversationPage() {
                     {delivery.rfcMessageId && (
                       <Link href={`/compose?reply=${row.id}&delivery=${delivery.id}`}>Reply</Link>
                     )}
-                    {delivery.rfcMessageId && delivery.recipients.length > 1 && (
+                    {delivery.rfcMessageId && delivery.replyAllRecipients.length > 1 && (
                       <Link href={`/compose?reply=${row.id}&delivery=${delivery.id}&all=1`}>
                         Reply all
                       </Link>

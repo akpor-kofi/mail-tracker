@@ -254,10 +254,11 @@ components:
         deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } }
     Delivery:
       type: object
-      required: [id, recipients, status]
+      required: [id, recipients, replyAllRecipients, status]
       properties:
         id: { type: string }
         recipients: { type: array, items: { type: string } }
+        replyAllRecipients: { type: array, items: { type: string } }
         status: { type: string, enum: [pending, sent, failed, unknown, prepared] }
         error: { type: string }
         gmailMessageId: { type: string }

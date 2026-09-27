@@ -36,7 +36,7 @@ func (r Postgres) CreateAttempt(ctx context.Context, owner, key string, d domain
 	}
 	for _, delivery := range ds {
 		hash := sha256.Sum256([]byte(delivery.PixelToken))
-		_, err = tx.Exec(ctx, `INSERT INTO deliveries(id,conversation_id,recipients,pixel_token_hash,status) VALUES($1,$2,$3,$4,'pending')`, delivery.ID, id, delivery.Recipients, hash[:])
+		_, err = tx.Exec(ctx, `INSERT INTO deliveries(id,conversation_id,recipients,reply_all_recipients,pixel_token_hash,status) VALUES($1,$2,$3,$4,$5,'pending')`, delivery.ID, id, delivery.Recipients, delivery.ReplyAllRecipients, hash[:])
 		if err != nil {
 			return "", false, err
 		}
@@ -57,7 +57,7 @@ func (r Postgres) GetResult(ctx context.Context, owner, cid string) (application
 	if err != nil || !exists {
 		return application.Result{}, errors.New("conversation not found")
 	}
-	rows, err := r.Pool.Query(ctx, `SELECT id,recipients,status,COALESCE(error,''),COALESCE(gmail_message_id,''),COALESCE(gmail_thread_id,''),COALESCE(rfc_message_id,'') FROM deliveries WHERE conversation_id=$1 ORDER BY created_at,id`, cid)
+	rows, err := r.Pool.Query(ctx, `SELECT id,recipients,reply_all_recipients,status,COALESCE(error,''),COALESCE(gmail_message_id,''),COALESCE(gmail_thread_id,''),COALESCE(rfc_message_id,'') FROM deliveries WHERE conversation_id=$1 ORDER BY created_at,id`, cid)
 	if err != nil {
 		return application.Result{}, err
 	}
@@ -65,7 +65,7 @@ func (r Postgres) GetResult(ctx context.Context, owner, cid string) (application
 	result := application.Result{ConversationID: cid, Deliveries: []application.Delivery{}}
 	for rows.Next() {
 		var d application.Delivery
-		if err := rows.Scan(&d.ID, &d.Recipients, &d.Status, &d.Error, &d.GmailMessageID, &d.GmailThreadID, &d.RFCMessageID); err != nil {
+		if err := rows.Scan(&d.ID, &d.Recipients, &d.ReplyAllRecipients, &d.Status, &d.Error, &d.GmailMessageID, &d.GmailThreadID, &d.RFCMessageID); err != nil {
 			return result, err
 		}
 		result.Deliveries = append(result.Deliveries, d)

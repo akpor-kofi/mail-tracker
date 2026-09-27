@@ -153,13 +153,14 @@ type ConversationDetailOpenStatus string
 
 // Delivery defines model for Delivery.
 type Delivery struct {
-	Error          *string        `json:"error,omitempty"`
-	GmailMessageId *string        `json:"gmailMessageId,omitempty"`
-	GmailThreadId  *string        `json:"gmailThreadId,omitempty"`
-	Id             string         `json:"id"`
-	Recipients     []string       `json:"recipients"`
-	RfcMessageId   *string        `json:"rfcMessageId,omitempty"`
-	Status         DeliveryStatus `json:"status"`
+	Error              *string        `json:"error,omitempty"`
+	GmailMessageId     *string        `json:"gmailMessageId,omitempty"`
+	GmailThreadId      *string        `json:"gmailThreadId,omitempty"`
+	Id                 string         `json:"id"`
+	Recipients         []string       `json:"recipients"`
+	ReplyAllRecipients []string       `json:"replyAllRecipients"`
+	RfcMessageId       *string        `json:"rfcMessageId,omitempty"`
+	Status             DeliveryStatus `json:"status"`
 }
 
 // DeliveryStatus defines model for Delivery.Status.

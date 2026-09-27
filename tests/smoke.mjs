@@ -75,6 +75,7 @@ try {
   const body = await detail.json();
   assert.equal(body.openStatus, 'open_detected');
   assert.equal(body.events.length, 1);
+  assert.deepEqual(body.deliveries[0].replyAllRecipients, []);
   console.log('Smoke checks passed: login, JWKS, authorization, pixel, persistence, and SSE.');
 } finally {
   if (mailboxID) await pool.query('DELETE FROM mailboxes WHERE id=$1', [mailboxID]);

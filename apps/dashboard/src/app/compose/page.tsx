@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
@@ -31,6 +31,7 @@ function Composer() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [result, setResult] = useState<components['schemas']['SendResult'] | null>(null);
+  const sendKey = useRef(crypto.randomUUID());
   const mailboxes = useQuery({
     queryKey: ['mailboxes'],
     queryFn: async () => {
@@ -72,7 +73,7 @@ function Composer() {
     if (!reply.data) return;
     const delivery = reply.data.deliveries.find((d) => d.id === replyDelivery);
     if (!delivery) return;
-    const to = replyAll ? delivery.recipients : delivery.recipients.slice(0, 1);
+    const to = replyAll ? delivery.replyAllRecipients : delivery.replyAllRecipients.slice(0, 1);
     setDraft((d) => ({
       ...d,
       mailboxId: reply.data!.mailboxId,
@@ -143,14 +144,14 @@ function Composer() {
     setMessage('');
     setResult(null);
     try {
-      if (draft.to.length > 1 && !mode)
+      if (draft.to.length + draft.cc.length + draft.bcc.length > 1 && !mode)
         throw new Error('Choose how to send to multiple recipients.');
       const sendMode = mode || 'shared';
       if (sendMode === 'separate' && (draft.cc.length || draft.bcc.length))
         throw new Error('Separate sends cannot include Cc or Bcc.');
       const { api } = await client();
       const sent = unwrap(
-        await api.POST('/send', { body: { draft, sendMode, idempotencyKey: crypto.randomUUID() } }),
+        await api.POST('/send', { body: { draft, sendMode, idempotencyKey: sendKey.current } }),
       );
       setResult(sent);
       qc.invalidateQueries({ queryKey: ['conversations'] });
@@ -237,7 +238,7 @@ function Composer() {
           {!!draft.attachments?.length && (
             <p className="muted">{draft.attachments.length} attachment(s) uploaded</p>
           )}
-          {draft.to.length > 1 && (
+          {draft.to.length + draft.cc.length + draft.bcc.length > 1 && (
             <fieldset className="send-modes">
               <legend>How should this go to multiple people?</legend>
               <label>
@@ -291,7 +292,8 @@ function Composer() {
                 !draft.mailboxId ||
                 !draft.to.length ||
                 !draft.subject ||
-                (draft.to.length > 1 && !mode)
+                (draft.to.length + draft.cc.length + draft.bcc.length > 1 && !mode) ||
+                !!result
               }
               onClick={send}
             >
