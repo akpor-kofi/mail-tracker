@@ -554,6 +554,8 @@ export interface operations {
             query?: never;
             header: {
                 "X-File-Name": string;
+                /** @description Set to percent when X-File-Name contains a percent-encoded UTF-8 filename. Without it, X-File-Name is used literally. */
+                "X-File-Name-Encoding"?: "percent";
             };
             path?: never;
             cookie?: never;

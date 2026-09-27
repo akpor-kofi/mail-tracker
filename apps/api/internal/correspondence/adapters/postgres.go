@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -16,21 +17,45 @@ import (
 
 type Postgres struct{ Pool *pgxpool.Pool }
 
+func requestHash(d domain.Draft, mode string) ([32]byte, error) {
+	// A local draft ID controls cleanup, not the message sent to Gmail.
+	d.ID = ""
+	request, err := json.Marshal(struct {
+		Draft domain.Draft `json:"draft"`
+		Mode  string       `json:"mode"`
+	}{Draft: d, Mode: mode})
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return sha256.Sum256(request), nil
+}
+
 func (r Postgres) CreateAttempt(ctx context.Context, owner, key string, d domain.Draft, mode string, ds []application.Delivery) (string, bool, error) {
+	requestHash, err := requestHash(d, mode)
+	if err != nil {
+		return "", false, err
+	}
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return "", false, err
 	}
 	defer tx.Rollback(ctx)
 	id := uuid.NewString()
-	tag, err := tx.Exec(ctx, `INSERT INTO conversations(id,owner_id,mailbox_id,subject,mode,status,idempotency_key) SELECT $1,$2,$3,$4,$5,'pending',$6 WHERE EXISTS(SELECT 1 FROM mailboxes WHERE id=$3 AND owner_id=$2) ON CONFLICT(owner_id,idempotency_key) DO NOTHING`, id, owner, d.MailboxID, d.Subject, mode, key)
+	tag, err := tx.Exec(ctx, `INSERT INTO conversations(id,owner_id,mailbox_id,subject,mode,status,idempotency_key,request_hash) SELECT $1,$2,$3,$4,$5,'pending',$6,$7 WHERE EXISTS(SELECT 1 FROM mailboxes WHERE id=$3 AND owner_id=$2) ON CONFLICT(owner_id,idempotency_key) DO NOTHING`, id, owner, d.MailboxID, d.Subject, mode, key, requestHash[:])
 	if err != nil {
 		return "", false, err
 	}
 	if tag.RowsAffected() == 0 {
-		err := tx.QueryRow(ctx, `SELECT id FROM conversations WHERE owner_id=$1 AND idempotency_key=$2`, owner, key).Scan(&id)
+		var previousHash []byte
+		err := tx.QueryRow(ctx, `SELECT id,request_hash FROM conversations WHERE owner_id=$1 AND idempotency_key=$2`, owner, key).Scan(&id, &previousHash)
 		if err != nil {
 			return "", false, errors.New("mailbox not found or idempotency conflict")
+		}
+		if previousHash == nil {
+			return "", false, &application.IdempotencyConflict{ConversationID: id, Legacy: true}
+		}
+		if !bytes.Equal(previousHash, requestHash[:]) {
+			return "", false, &application.IdempotencyConflict{ConversationID: id}
 		}
 		return id, true, nil
 	}
@@ -44,12 +69,20 @@ func (r Postgres) CreateAttempt(ctx context.Context, owner, key string, d domain
 	return id, false, tx.Commit(ctx)
 }
 func (r Postgres) UpdateDelivery(ctx context.Context, id, status string, sent application.SentMessage, errText string) error {
-	_, err := r.Pool.Exec(ctx, `UPDATE deliveries SET status=$2,gmail_message_id=NULLIF($3,''),gmail_thread_id=NULLIF($4,''),rfc_message_id=NULLIF($5,''),error=NULLIF($6,'') WHERE id=$1`, id, status, sent.GmailID, sent.ThreadID, sent.RFCMessageID, errText)
+	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = r.Pool.Exec(ctx, `UPDATE conversations SET updated_at=now(),status=CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='pending') THEN 'pending' ELSE 'sent' END WHERE id=(SELECT conversation_id FROM deliveries WHERE id=$1)`, id)
-	return err
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, `UPDATE deliveries SET status=$2,gmail_message_id=NULLIF($3,''),gmail_thread_id=NULLIF($4,''),rfc_message_id=NULLIF($5,''),error=NULLIF($6,'') WHERE id=$1`, id, status, sent.GmailID, sent.ThreadID, sent.RFCMessageID, errText)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE conversations SET updated_at=now(),status=CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='pending') THEN 'pending' ELSE 'sent' END WHERE id=(SELECT conversation_id FROM deliveries WHERE id=$1)`, id)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 func (r Postgres) GetResult(ctx context.Context, owner, cid string) (application.Result, error) {
 	var exists bool
@@ -87,9 +120,23 @@ func (r Postgres) SaveDraft(ctx context.Context, owner, id string, d domain.Draf
 	if err != nil {
 		return DraftRecord{}, err
 	}
-	var at time.Time
-	err = r.Pool.QueryRow(ctx, `INSERT INTO local_drafts(id,owner_id,mailbox_id,content) SELECT $1,$2,$3,$4 WHERE EXISTS(SELECT 1 FROM mailboxes WHERE id=$3 AND owner_id=$2) ON CONFLICT(id) DO UPDATE SET content=excluded.content,mailbox_id=excluded.mailbox_id,updated_at=now() WHERE local_drafts.owner_id=$2 RETURNING updated_at`, id, owner, d.MailboxID, content).Scan(&at)
+	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
+		return DraftRecord{}, err
+	}
+	defer tx.Rollback(ctx)
+	for _, attachmentID := range d.Attachments {
+		var exists string
+		if err := tx.QueryRow(ctx, `SELECT id FROM attachments WHERE id=$1 AND owner_id=$2 FOR SHARE`, attachmentID, owner).Scan(&exists); err != nil {
+			return DraftRecord{}, errors.New("attachment missing or not owned by this account")
+		}
+	}
+	var at time.Time
+	err = tx.QueryRow(ctx, `INSERT INTO local_drafts(id,owner_id,mailbox_id,content) SELECT $1,$2,$3,$4 WHERE EXISTS(SELECT 1 FROM mailboxes WHERE id=$3 AND owner_id=$2) ON CONFLICT(id) DO UPDATE SET content=excluded.content,mailbox_id=excluded.mailbox_id,updated_at=now() WHERE local_drafts.owner_id=$2 RETURNING updated_at`, id, owner, d.MailboxID, content).Scan(&at)
+	if err != nil {
+		return DraftRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return DraftRecord{}, err
 	}
 	return DraftRecord{ID: id, Content: d, UpdatedAt: at}, nil
@@ -142,6 +189,6 @@ func (r Postgres) RecoverInterrupted(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.Pool.Exec(ctx, `UPDATE conversations c SET status='unknown',updated_at=now() WHERE c.status='pending' AND EXISTS(SELECT 1 FROM deliveries d WHERE d.conversation_id=c.id AND d.status='unknown')`)
+	_, err = r.Pool.Exec(ctx, `UPDATE conversations SET status=CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' ELSE 'sent' END,updated_at=now() WHERE mode<>'addon' AND status<>CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' ELSE 'sent' END`)
 	return err
 }

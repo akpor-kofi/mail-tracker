@@ -43,7 +43,7 @@ function Composer() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [result, setResult] = useState<components['schemas']['SendResult'] | null>(null);
-  const sendKey = useRef(crypto.randomUUID());
+  const sendRequest = useRef<{ payload: string; key: string } | null>(null);
   const mailboxes = useQuery({
     queryKey: ['mailboxes'],
     queryFn: async () => {
@@ -136,7 +136,8 @@ function Composer() {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': file.type || 'application/octet-stream',
-            'X-File-Name': file.name,
+            'X-File-Name': encodeURIComponent(file.name),
+            'X-File-Name-Encoding': 'percent',
           },
           body: file,
         });
@@ -161,9 +162,25 @@ function Composer() {
       const sendMode = mode || 'shared';
       if (sendMode === 'separate' && (draft.cc.length || draft.bcc.length))
         throw new Error('Separate sends cannot include Cc or Bcc.');
+      const payload = JSON.stringify({
+        mailboxId: draft.mailboxId,
+        to: draft.to,
+        cc: draft.cc,
+        bcc: draft.bcc,
+        subject: draft.subject,
+        html: draft.html,
+        replyToMessageId: draft.replyToMessageId || '',
+        threadId: draft.threadId || '',
+        attachments: draft.attachments || [],
+        sendMode,
+      });
+      if (sendRequest.current?.payload !== payload)
+        sendRequest.current = { payload, key: crypto.randomUUID() };
       const { api } = await client();
       const sent = unwrap(
-        await api.POST('/send', { body: { draft, sendMode, idempotencyKey: sendKey.current } }),
+        await api.POST('/send', {
+          body: { draft, sendMode, idempotencyKey: sendRequest.current.key },
+        }),
       );
       setResult(sent);
       qc.invalidateQueries({ queryKey: ['conversations'] });

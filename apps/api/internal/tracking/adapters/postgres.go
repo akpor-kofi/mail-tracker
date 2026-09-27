@@ -12,7 +12,15 @@ type Postgres struct{ Pool *pgxpool.Pool }
 
 func (r Postgres) RecordOpen(ctx context.Context, hash []byte) (string, error) {
 	var owner string
-	err := r.Pool.QueryRow(ctx, `WITH ins AS (INSERT INTO open_events(delivery_id) SELECT id FROM deliveries WHERE pixel_token_hash=$1 RETURNING delivery_id) SELECT c.owner_id FROM ins JOIN deliveries d ON d.id=ins.delivery_id JOIN conversations c ON c.id=d.conversation_id`, hash).Scan(&owner)
+	err := r.Pool.QueryRow(ctx, `WITH updated AS (
+		UPDATE deliveries SET recorded_open_count=recorded_open_count+1,last_open_recorded_at=now()
+		WHERE pixel_token_hash=$1 AND recorded_open_count<1000
+		  AND (last_open_recorded_at IS NULL OR last_open_recorded_at<now()-interval '5 minutes')
+		RETURNING id,conversation_id
+	), inserted AS (
+		INSERT INTO open_events(delivery_id) SELECT id FROM updated RETURNING delivery_id
+	)
+	SELECT c.owner_id FROM inserted i JOIN updated u ON u.id=i.delivery_id JOIN conversations c ON c.id=u.conversation_id`, hash).Scan(&owner)
 	return owner, err
 }
 func (r Postgres) Prepare(ctx context.Context, owner, mailboxID, subject string, recipients []string, hash []byte) (string, error) {

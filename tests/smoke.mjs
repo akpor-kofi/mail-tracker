@@ -62,6 +62,50 @@ try {
   assert.equal(image.status, 200, 'pixel response');
   assert.equal(image.headers.get('content-type'), 'image/gif');
   assert.equal((await image.arrayBuffer()).byteLength, 43);
+  await fetch(`${apiURL}/p/${pixel}.gif`);
+  assert.equal(
+    Number(
+      (
+        await pool.query('SELECT count(*) AS count FROM open_events WHERE delivery_id=$1', [
+          deliveryID,
+        ])
+      ).rows[0].count,
+    ),
+    1,
+    'rapid repeat pixel requests are coalesced',
+  );
+  await pool.query(
+    `UPDATE deliveries SET last_open_recorded_at=now()-interval '6 minutes' WHERE id=$1`,
+    [deliveryID],
+  );
+  await fetch(`${apiURL}/p/${pixel}.gif`);
+  assert.equal(
+    Number(
+      (
+        await pool.query('SELECT count(*) AS count FROM open_events WHERE delivery_id=$1', [
+          deliveryID,
+        ])
+      ).rows[0].count,
+    ),
+    2,
+    'later pixel request is recorded',
+  );
+  await pool.query(
+    `UPDATE deliveries SET recorded_open_count=1000,last_open_recorded_at=now()-interval '6 minutes' WHERE id=$1`,
+    [deliveryID],
+  );
+  await fetch(`${apiURL}/p/${pixel}.gif`);
+  assert.equal(
+    Number(
+      (
+        await pool.query('SELECT count(*) AS count FROM open_events WHERE delivery_id=$1', [
+          deliveryID,
+        ])
+      ).rows[0].count,
+    ),
+    2,
+    'pixel event limit is enforced',
+  );
   const changed = await Promise.race([
     reader.read(),
     new Promise((_, reject) => setTimeout(() => reject(new Error('SSE update missing')), 5000)),
@@ -74,9 +118,82 @@ try {
   assert.equal(detail.status, 200);
   const body = await detail.json();
   assert.equal(body.openStatus, 'open_detected');
-  assert.equal(body.events.length, 1);
+  assert.equal(body.events.length, 2);
   assert.deepEqual(body.deliveries[0].replyAllRecipients, []);
-  console.log('Smoke checks passed: login, JWKS, authorization, pixel, persistence, and SSE.');
+  const filename = 'report-📈.pdf';
+  const upload = await fetch(`${apiURL}/api/v1/attachments`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/pdf',
+      'x-file-name': encodeURIComponent(filename),
+      'x-file-name-encoding': 'percent',
+    },
+    body: Buffer.from('test attachment'),
+  });
+  assert.equal(upload.status, 200, 'Unicode attachment upload');
+  const uploaded = await upload.json();
+  const attachment = await pool.query('SELECT filename FROM attachments WHERE id=$1', [
+    uploaded.id,
+  ]);
+  assert.equal(attachment.rows[0].filename, filename);
+  const rawFilename = '100%+ready.pdf';
+  const rawUpload = await fetch(`${apiURL}/api/v1/attachments`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/pdf',
+      'x-file-name': rawFilename,
+    },
+    body: Buffer.from('legacy client upload'),
+  });
+  assert.equal(rawUpload.status, 200, 'literal filename upload remains supported');
+  const rawAttachment = await pool.query('SELECT filename FROM attachments WHERE id=$1', [
+    (await rawUpload.json()).id,
+  ]);
+  assert.equal(rawAttachment.rows[0].filename, rawFilename);
+
+  const sendKey = randomUUID();
+  const draft = {
+    mailboxId: mailboxID,
+    to: ['first@example.invalid'],
+    cc: [],
+    bcc: [],
+    subject: 'Smoke send',
+    html: '<p>Hello</p>',
+  };
+  const send = (message) =>
+    fetch(`${apiURL}/api/v1/send`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ draft: message, sendMode: 'shared', idempotencyKey: sendKey }),
+    });
+  const firstSend = await send(draft);
+  assert.equal(firstSend.status, 200, 'first send attempt was recorded');
+  const firstResult = await firstSend.json();
+  assert.equal(firstResult.deliveries[0].status, 'failed', 'dummy mailbox cannot send');
+  const failedConversation = await fetch(
+    `${apiURL}/api/v1/conversations/${firstResult.conversationId}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  assert.equal((await failedConversation.json()).status, 'partial_or_failed');
+  const repeatSend = await send(draft);
+  assert.equal(repeatSend.status, 200, 'same request may be retried');
+  assert.equal((await repeatSend.json()).conversationId, firstResult.conversationId);
+  const savedDraftRetry = await send({ ...draft, id: randomUUID() });
+  assert.equal(savedDraftRetry.status, 200, 'saving the draft preserves the retry key');
+  assert.equal((await savedDraftRetry.json()).conversationId, firstResult.conversationId);
+  const changedSend = await send({ ...draft, to: ['other@example.invalid'] });
+  assert.equal(changedSend.status, 409, 'same key cannot send changed content');
+  await pool.query('UPDATE conversations SET request_hash=NULL WHERE id=$1', [
+    firstResult.conversationId,
+  ]);
+  const legacyRepeat = await send(draft);
+  assert.equal(legacyRepeat.status, 409, 'pre-upgrade send needs manual review');
+  assert.match((await legacyRepeat.json()).error, new RegExp(firstResult.conversationId));
+  console.log(
+    'Smoke checks passed: login, authorization, pixel limits, Unicode upload, idempotency, and SSE.',
+  );
 } finally {
   if (mailboxID) await pool.query('DELETE FROM mailboxes WHERE id=$1', [mailboxID]);
   await pool.end();

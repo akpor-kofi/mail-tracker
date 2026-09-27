@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,37 @@ func main() {
 	tracking := trackingdb.Postgres{Pool: pool}
 	broker := trackingdb.NewBroker()
 	files := corrdb.Files{Pool: pool, Dir: required("ATTACHMENT_DIR")}
+	cleanupCtx, stopCleanup := context.WithCancel(context.Background())
+	defer stopCleanup()
+	go func() {
+		sweep := func() {
+			for batch := 0; batch < 10; batch++ {
+				ctx, cancel := context.WithTimeout(cleanupCtx, time.Minute)
+				count, err := files.CleanupOrphans(ctx, time.Now().Add(-24*time.Hour), 100)
+				cancel()
+				if err != nil {
+					if cleanupCtx.Err() == nil {
+						log.Printf("attachment cleanup: %v", err)
+					}
+					return
+				}
+				if count < 100 {
+					return
+				}
+			}
+		}
+		sweep()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				sweep()
+			}
+		}
+	}()
 	sender := corrdb.Gmail{OAuth: oauth, Attachments: files}
 	addon := trackingapp.AddonService{Pairs: trackingdb.PairingPostgres{Pool: pool}, Tracking: tracking, Identity: trackingdb.GoogleIdentity{ClientID: required("GOOGLE_ADDON_CLIENT_ID")}, PublicURL: publicURL, Events: broker}
 	server := &httpapi.Server{Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL}, Tracking: tracking, Addon: addon}
@@ -73,7 +105,21 @@ func main() {
 			return fiber.NewError(401, "unauthorized")
 		}
 		data := c.Body()
-		id, err := files.Save(c.Context(), owner, c.Get("X-File-Name"), c.Get("Content-Type"), data)
+		name := c.Get("X-File-Name")
+		encoding := c.Get("X-File-Name-Encoding")
+		if encoding == "percent" {
+			decoded, err := url.QueryUnescape(name)
+			if err != nil {
+				return fiber.NewError(400, "invalid attachment filename")
+			}
+			name = decoded
+		} else if encoding != "" {
+			return fiber.NewError(400, "invalid attachment filename encoding")
+		}
+		if strings.TrimSpace(name) == "" {
+			return fiber.NewError(400, "invalid attachment filename")
+		}
+		id, err := files.Save(c.Context(), owner, name, c.Get("Content-Type"), data)
 		if err != nil {
 			return fiber.NewError(400, err.Error())
 		}

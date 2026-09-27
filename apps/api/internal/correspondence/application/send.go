@@ -37,6 +37,18 @@ type Repository interface {
 
 var ErrAmbiguous = errors.New("send outcome uncertain")
 
+type IdempotencyConflict struct {
+	ConversationID string
+	Legacy         bool
+}
+
+func (e *IdempotencyConflict) Error() string {
+	if e.Legacy {
+		return "this send predates request verification; inspect conversation " + e.ConversationID + " before starting a new send"
+	}
+	return "idempotency key was already used for a different message"
+}
+
 type SentMessage struct{ GmailID, ThreadID, RFCMessageID string }
 type Sender interface {
 	Send(context.Context, string, domain.Draft, domain.PlannedDelivery, string) (SentMessage, error)

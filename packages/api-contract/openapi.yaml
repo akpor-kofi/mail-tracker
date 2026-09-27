@@ -114,6 +114,12 @@ paths:
       description: Upload one temporary attachment, at most 20 MB.
       parameters:
         - { name: X-File-Name, in: header, required: true, schema: { type: string } }
+        - name: X-File-Name-Encoding
+          in: header
+          schema: { type: string, enum: [percent] }
+          description: >-
+            Set to percent when X-File-Name contains a percent-encoded UTF-8 filename.
+            Without it, X-File-Name is used literally.
       requestBody:
         required: true
         content:

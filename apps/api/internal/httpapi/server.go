@@ -159,6 +159,10 @@ func (s *Server) SendTrackedMessage(ctx context.Context, r SendTrackedMessageReq
 	}
 	result, err := s.Send.Send(ctx, owner(ctx), r.Body.IdempotencyKey, string(r.Body.SendMode), draftIn(r.Body.Draft))
 	if err != nil {
+		var conflict *corrapp.IdempotencyConflict
+		if errors.As(err, &conflict) {
+			return nil, fiber.NewError(409, conflict.Error())
+		}
 		return nil, bad(err)
 	}
 	out := SendTrackedMessage200JSONResponse{ConversationId: result.ConversationID, Deliveries: []Delivery{}}

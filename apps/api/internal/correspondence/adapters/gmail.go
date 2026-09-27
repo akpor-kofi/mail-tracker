@@ -39,6 +39,31 @@ func cleanHeader(s string) string { return strings.NewReplacer("\r", "", "\n", "
 func plainText(clean string) string {
 	return strings.TrimSpace(html.UnescapeString(tags.ReplaceAllString(strings.ReplaceAll(clean, "<br>", "\n"), " ")))
 }
+func writeMIMEBase64(w io.Writer, data []byte) error {
+	var encoded [76]byte
+	for len(data) > 0 {
+		chunkSize := 57
+		if len(data) < chunkSize {
+			chunkSize = len(data)
+		}
+		encodedLength := base64.StdEncoding.EncodedLen(chunkSize)
+		base64.StdEncoding.Encode(encoded[:encodedLength], data[:chunkSize])
+		n, err := w.Write(encoded[:encodedLength])
+		if err != nil {
+			return err
+		}
+		if n != encodedLength {
+			return io.ErrShortWrite
+		}
+		data = data[chunkSize:]
+		if len(data) > 0 {
+			if _, err := io.WriteString(w, "\r\n"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 func writePart(w *multipart.Writer, contentType, body string) error {
 	h := textproto.MIMEHeader{}
 	h.Set("Content-Type", contentType+"; charset=UTF-8")
@@ -47,12 +72,7 @@ func writePart(w *multipart.Writer, contentType, body string) error {
 	if err != nil {
 		return err
 	}
-	enc := base64.NewEncoder(base64.StdEncoding, part)
-	_, err = io.WriteString(enc, body)
-	if err != nil {
-		return err
-	}
-	return enc.Close()
+	return writeMIMEBase64(part, []byte(body))
 }
 func BuildMIME(ctx context.Context, m mailboxdomain.Mailbox, d domain.Draft, p domain.PlannedDelivery, pixel string, attachments interface {
 	Load(context.Context, string, string) ([]byte, string, string, error)
@@ -98,11 +118,7 @@ func BuildMIME(ctx context.Context, m mailboxdomain.Mailbox, d domain.Draft, p d
 		if err != nil {
 			return "", "", err
 		}
-		enc := base64.NewEncoder(base64.StdEncoding, part)
-		if _, err := enc.Write(data); err != nil {
-			return "", "", err
-		}
-		if err := enc.Close(); err != nil {
+		if err := writeMIMEBase64(part, data); err != nil {
 			return "", "", err
 		}
 	}

@@ -39,4 +39,6 @@ Use two Gmail accounts and a recipient account you control:
 - **Connection expires:** Check OAuth consent screen publishing status. Testing-mode refresh tokens can expire after seven days. Reconnect the mailbox if needed.
 - **Add-on pairing rejected:** Pair while signed into the Gmail account that matches the connected mailbox. Verify the Apps Script ID token audience in `GOOGLE_ADDON_CLIENT_ID` and the generated URL allowlist.
 - **Send status unknown:** The API cannot know whether Gmail accepted a timed-out request. Inspect that account's Gmail Sent folder before any manual retry. The service never retries unknown outcomes automatically.
+- **Retry conflict after upgrading:** Sends recorded before request fingerprinting have no stored message body to compare with a retry. The API returns a conflict containing the earlier conversation ID. Inspect that conversation and Gmail Sent before starting a new send; it will not silently claim that changed content was sent.
+- **Attachment missing from an old unsaved message:** Uploads not referenced by a saved draft are cleaned up after 24 hours. Reupload the file before sending. Saved drafts keep their referenced uploads.
 - **Caddy certificate pending:** Check DNS points to the host and TCP ports 80/443 are open. `docker compose ... logs caddy` gives the certificate error.
