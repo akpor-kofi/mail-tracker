@@ -6,9 +6,15 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Shared with apps/dashboard/scripts/migrate.mjs. Both migrators must hold the
+// same session lock before changing schema in this database.
+const migrationLockNamespace = 1297371723
+const migrationLockID = 1
 
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	p, err := pgxpool.New(ctx, url)
@@ -28,7 +34,22 @@ func Migrate(ctx context.Context, p *pgxpool.Pool, dir string) error {
 		return err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Name() < files[j].Name() })
-	if _, err := p.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY)`); err != nil {
+	conn, err := p.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	// Closing the session releases its advisory lock, including after a canceled
+	// migration. Never return a still-locked connection to the pool.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = conn.Conn().Close(closeCtx)
+		conn.Release()
+	}()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1::integer, $2::integer)`, migrationLockNamespace, migrationLockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY)`); err != nil {
 		return err
 	}
 	for _, f := range files {
@@ -36,7 +57,7 @@ func Migrate(ctx context.Context, p *pgxpool.Pool, dir string) error {
 			continue
 		}
 		var exists bool
-		if err := p.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, f.Name()).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, f.Name()).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -46,7 +67,7 @@ func Migrate(ctx context.Context, p *pgxpool.Pool, dir string) error {
 		if err != nil {
 			return err
 		}
-		tx, err := p.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}

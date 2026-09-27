@@ -5,6 +5,19 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mailtracker
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mailtracker"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -23,6 +36,8 @@ jobs:
       - run: git diff --exit-code -- apps/api/internal/httpapi packages/api-client/src/schema.d.ts
       - run: go test ./...
         working-directory: apps/api
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@127.0.0.1:5432/mailtracker?sslmode=disable
       - run: pnpm typecheck
       - run: pnpm --filter gmail-addon check
       - run: BETTER_AUTH_SECRET=build-only-placeholder-secret-not-used-in-production PUBLIC_URL=https://example.invalid DATABASE_URL=postgres://unused:unused@localhost/unused pnpm build

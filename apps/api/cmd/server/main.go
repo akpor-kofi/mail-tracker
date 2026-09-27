@@ -39,14 +39,14 @@ func required(name string) string {
 	return value
 }
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	pool, err := db.Open(ctx, required("DATABASE_URL"))
+	connectCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	pool, err := db.Open(connectCtx, required("DATABASE_URL"))
+	cancel()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pool.Close()
-	if err := db.Migrate(ctx, pool, "migrations"); err != nil {
+	if err := db.Migrate(context.Background(), pool, "migrations"); err != nil {
 		log.Fatal(err)
 	}
 	sealer, err := platformcrypto.NewSealer(required("INSTANCE_SECRET"))
@@ -58,7 +58,7 @@ func main() {
 	pairings := trackingdb.PairingPostgres{Pool: pool}
 	oauth := mailboxapp.OAuthService{Repo: mailboxes, Sealer: sealer, Cache: &mailboxapp.AccessTokenCache{}, ClientID: required("GOOGLE_CLIENT_ID"), ClientSecret: required("GOOGLE_CLIENT_SECRET"), BaseURL: publicURL}
 	correspondence := corrdb.Postgres{Pool: pool}
-	if err := correspondence.RecoverInterrupted(ctx); err != nil {
+	if err := correspondence.RecoverInterrupted(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 	tracking := trackingdb.Postgres{Pool: pool}

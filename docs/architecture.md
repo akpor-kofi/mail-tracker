@@ -34,4 +34,4 @@ The add-on's code is in `apps/gmail-addon`; `scripts/configure.mjs` writes the i
 
 ## Database ownership
 
-Better Auth maintains its own tables in the same PostgreSQL database and runs its migration on dashboard startup. Numbered SQL files in `apps/api/migrations` own the mail tracker tables and run on Go startup. Back up the database, attachment volume, and secrets together.
+Better Auth maintains its own tables in the same PostgreSQL database and runs its migration on dashboard startup. Numbered SQL files in `apps/api/migrations` own the mail tracker tables and run on Go startup. Both startup migrators acquire the same PostgreSQL advisory lock, so multiple replicas and the two apps migrate one at a time. The Go migrator holds one database session across its version check and each transactional file; it closes that session to release the lock. Migration work has no fixed 30-second startup deadline, so a long backfill can finish before the API begins serving. Back up the database, attachment volume, and secrets together.

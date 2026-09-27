@@ -20,4 +20,4 @@ RUN corepack enable && corepack prepare pnpm@11.6.0 --activate
 COPY --from=build /repo /repo
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME=0.0.0.0
-CMD ["sh", "-c", "pnpm --filter dashboard exec auth migrate --yes && node apps/dashboard/.next/standalone/apps/dashboard/server.js"]
+CMD ["sh", "-c", "node apps/dashboard/scripts/migrate.mjs && node apps/dashboard/.next/standalone/apps/dashboard/server.js"]
