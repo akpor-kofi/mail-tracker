@@ -55,6 +55,7 @@ func main() {
 	}
 	publicURL := strings.TrimRight(required("PUBLIC_URL"), "/")
 	mailboxes := mailboxdb.Postgres{Pool: pool}
+	pairings := trackingdb.PairingPostgres{Pool: pool}
 	oauth := mailboxapp.OAuthService{Repo: mailboxes, Sealer: sealer, ClientID: required("GOOGLE_CLIENT_ID"), ClientSecret: required("GOOGLE_CLIENT_SECRET"), BaseURL: publicURL}
 	correspondence := corrdb.Postgres{Pool: pool}
 	if err := correspondence.RecoverInterrupted(ctx); err != nil {
@@ -66,7 +67,7 @@ func main() {
 	cleanupCtx, stopCleanup := context.WithCancel(context.Background())
 	defer stopCleanup()
 	go func() {
-		sweep := func() {
+		sweepAttachments := func() {
 			for batch := 0; batch < 10; batch++ {
 				ctx, cancel := context.WithTimeout(cleanupCtx, time.Minute)
 				count, err := files.CleanupOrphans(ctx, time.Now().Add(-24*time.Hour), 100)
@@ -82,7 +83,20 @@ func main() {
 				}
 			}
 		}
-		sweep()
+		deleteExpired := func() {
+			ctx, cancel := context.WithTimeout(cleanupCtx, 15*time.Second)
+			if err := mailboxes.DeleteExpiredStates(ctx); err != nil && cleanupCtx.Err() == nil {
+				log.Printf("OAuth state cleanup: %v", err)
+			}
+			cancel()
+			ctx, cancel = context.WithTimeout(cleanupCtx, 15*time.Second)
+			if err := pairings.DeleteExpiredCodes(ctx); err != nil && cleanupCtx.Err() == nil {
+				log.Printf("pairing code cleanup: %v", err)
+			}
+			cancel()
+		}
+		sweepAttachments()
+		deleteExpired()
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -90,12 +104,13 @@ func main() {
 			case <-cleanupCtx.Done():
 				return
 			case <-ticker.C:
-				sweep()
+				sweepAttachments()
+				deleteExpired()
 			}
 		}
 	}()
 	sender := corrdb.Gmail{OAuth: oauth, Attachments: files}
-	addon := trackingapp.AddonService{Pairs: trackingdb.PairingPostgres{Pool: pool}, Tracking: tracking, Identity: trackingdb.GoogleIdentity{ClientID: required("GOOGLE_ADDON_CLIENT_ID")}, PublicURL: publicURL, Events: broker}
+	addon := trackingapp.AddonService{Pairs: pairings, Tracking: tracking, Identity: trackingdb.GoogleIdentity{ClientID: required("GOOGLE_ADDON_CLIENT_ID")}, PublicURL: publicURL, Events: broker}
 	server := &httpapi.Server{Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL}, Tracking: tracking, Addon: addon}
 	app := fiber.New(fiber.Config{BodyLimit: 21 << 20, ErrorHandler: func(c fiber.Ctx, err error) error {
 		code := 500
@@ -123,7 +138,7 @@ func main() {
 		name := c.Get("X-File-Name")
 		encoding := c.Get("X-File-Name-Encoding")
 		if encoding == "percent" {
-			decoded, err := url.QueryUnescape(name)
+			decoded, err := url.PathUnescape(name)
 			if err != nil {
 				return fiber.NewError(400, "invalid attachment filename")
 			}

@@ -19,6 +19,10 @@ func (r Postgres) ConsumeState(ctx context.Context, hash []byte) (string, string
 	err := r.Pool.QueryRow(ctx, `DELETE FROM oauth_states WHERE state_hash=$1 AND expires_at>now() RETURNING owner_id,verifier`, hash).Scan(&owner, &verifier)
 	return owner, verifier, err
 }
+func (r Postgres) DeleteExpiredStates(ctx context.Context) error {
+	_, err := r.Pool.Exec(ctx, `DELETE FROM oauth_states WHERE expires_at < now()`)
+	return err
+}
 func (r Postgres) Upsert(ctx context.Context, m domain.Mailbox, encrypted []byte) error {
 	_, err := r.Pool.Exec(ctx, `INSERT INTO mailboxes(id,owner_id,google_sub,email,encrypted_refresh_token) VALUES($1,$2,$3,$4,$5) ON CONFLICT(owner_id,google_sub) DO UPDATE SET email=excluded.email,encrypted_refresh_token=excluded.encrypted_refresh_token,connected_at=now()`, m.ID, m.OwnerID, m.GoogleSub, m.Email, encrypted)
 	return err

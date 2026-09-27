@@ -152,6 +152,21 @@ try {
     (await rawUpload.json()).id,
   ]);
   assert.equal(rawAttachment.rows[0].filename, rawFilename);
+  const plusUpload = await fetch(`${apiURL}/api/v1/attachments`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/pdf',
+      'x-file-name': 'budget+final%20draft.pdf',
+      'x-file-name-encoding': 'percent',
+    },
+    body: Buffer.from('encoded filename with a literal plus'),
+  });
+  assert.equal(plusUpload.status, 200, 'percent-encoded filename with literal plus');
+  const plusAttachment = await pool.query('SELECT filename FROM attachments WHERE id=$1', [
+    (await plusUpload.json()).id,
+  ]);
+  assert.equal(plusAttachment.rows[0].filename, 'budget+final draft.pdf');
 
   const sendKey = randomUUID();
   const draft = {

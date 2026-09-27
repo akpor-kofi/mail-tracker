@@ -33,6 +33,10 @@ func (r PairingPostgres) ConsumeCode(ctx context.Context, hash []byte, sub strin
 	}
 	return id, tx.Commit(ctx)
 }
+func (r PairingPostgres) DeleteExpiredCodes(ctx context.Context) error {
+	_, err := r.Pool.Exec(ctx, `DELETE FROM pairing_codes WHERE expires_at < now()`)
+	return err
+}
 func (r PairingPostgres) SavePair(ctx context.Context, sub, id string) error {
 	_, err := r.Pool.Exec(ctx, `INSERT INTO addon_pairs(google_sub,mailbox_id) VALUES($1,$2) ON CONFLICT(google_sub) DO UPDATE SET mailbox_id=excluded.mailbox_id,paired_at=now()`, sub, id)
 	return err
