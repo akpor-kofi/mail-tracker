@@ -4,6 +4,8 @@ import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
 import { client, unwrap } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 export default function ConversationPage() {
   const params = useParams<{ id: string }>();
   const detail = useQuery({
@@ -40,9 +42,9 @@ export default function ConversationPage() {
       ) : detail.isError ? (
         <div className="list-state error">
           Could not load conversation.{' '}
-          <button className="text-button" onClick={() => detail.refetch()}>
+          <Button variant="link" size="sm" onClick={() => detail.refetch()}>
             Retry
-          </button>
+          </Button>
         </div>
       ) : (
         row && (
@@ -62,11 +64,17 @@ export default function ConversationPage() {
                     </p>
                   </div>
                   <div className="delivery-actions">
-                    <span>
+                    <Badge
+                      variant={
+                        row.events.some((e) => e.deliveryId === delivery.id)
+                          ? 'default'
+                          : 'secondary'
+                      }
+                    >
                       {row.events.some((e) => e.deliveryId === delivery.id)
                         ? 'Open detected'
                         : 'No open detected'}
-                    </span>
+                    </Badge>
                     {delivery.rfcMessageId && (
                       <Link href={`/compose?reply=${row.id}&delivery=${delivery.id}`}>Reply</Link>
                     )}
@@ -75,7 +83,7 @@ export default function ConversationPage() {
                         Reply all
                       </Link>
                     )}
-                    <span>
+                    <Badge variant="outline">
                       {delivery.status === 'unknown'
                         ? 'Send status unknown'
                         : delivery.status === 'prepared'
@@ -85,7 +93,7 @@ export default function ConversationPage() {
                             : delivery.status === 'failed'
                               ? 'Failed'
                               : 'Sending'}
-                    </span>
+                    </Badge>
                   </div>
                   {delivery.error && <p className="error">{delivery.error}</p>}
                 </div>

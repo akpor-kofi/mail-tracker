@@ -3,6 +3,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Shell } from '@/components/shell';
 import { client, unwrap } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 export default function Settings() {
   const qc = useQueryClient();
   const [code, setCode] = useState('');
@@ -35,7 +48,6 @@ export default function Settings() {
     }
   }
   async function remove(mailboxId: string) {
-    if (!confirm('Remove this Gmail connection and its tracked records?')) return;
     try {
       setError('');
       const { api } = await client();
@@ -57,18 +69,20 @@ export default function Settings() {
           <h1>Mailboxes</h1>
           <p>Each Gmail account needs its own Google authorization.</p>
         </div>
-        <button onClick={connect}>Connect Gmail</button>
+        <Button onClick={connect}>Connect Gmail</Button>
       </div>
       {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {code && (
-        <div className="inline-notice">
-          <strong>One-use pairing code:</strong> <code>{code}</code>
-          <span>Enter it in the Gmail add-on within 10 minutes.</span>
-        </div>
+        <Alert className="pairing-notice" role="status">
+          <AlertTitle>One-use pairing code</AlertTitle>
+          <AlertDescription>
+            <code>{code}</code> Enter it in the Gmail add-on within 10 minutes.
+          </AlertDescription>
+        </Alert>
       )}
       {mailboxes.isPending ? (
         <div className="list-state">Loading mailboxes…</div>
@@ -85,12 +99,28 @@ export default function Settings() {
                 <p>Connected {new Date(m.connectedAt).toLocaleDateString()}</p>
               </div>
               <div className="actions">
-                <button className="secondary" onClick={() => pair(m.id)}>
+                <Button variant="outline" onClick={() => pair(m.id)}>
                   Pair add-on
-                </button>
-                <button className="danger" onClick={() => remove(m.id)}>
-                  Remove
-                </button>
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive">Remove</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove this Gmail connection?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This deletes its tracked messages and stored connection from this instance.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" onClick={() => remove(m.id)}>
+                        Remove connection
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           ))}

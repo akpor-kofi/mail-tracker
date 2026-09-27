@@ -5,6 +5,17 @@ import { useEffect, useState } from 'react';
 import { Shell } from '@/components/shell';
 import { client, unwrap } from '@/lib/api';
 import type { components } from '@mail-tracker/api-client';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 
 type Conversation = components['schemas']['Conversation'];
 function statusLabel(row: Conversation) {
@@ -85,46 +96,54 @@ export default function Dashboard() {
           <h1>Conversations</h1>
           <p>Open detection depends on the recipient&apos;s mail client loading images.</p>
         </div>
-        <Link className="button" href="/compose">
-          Compose
-        </Link>
+        <Button asChild>
+          <Link href="/compose">Compose</Link>
+        </Button>
       </div>
       <div className="toolbar">
-        <label>
-          Mailbox
-          <select value={mailboxId} onChange={(e) => setMailboxId(e.target.value)}>
-            <option value="">All mailboxes</option>
-            {mailboxes.data?.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.email}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="secondary"
+        <div className="filter-field">
+          <Label htmlFor="mailbox-filter">Mailbox</Label>
+          <Select
+            value={mailboxId || 'all'}
+            onValueChange={(value) => setMailboxId(value === 'all' ? '' : value)}
+          >
+            <SelectTrigger id="mailbox-filter" className="w-full">
+              <SelectValue placeholder="All mailboxes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All mailboxes</SelectItem>
+              {mailboxes.data?.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          variant="outline"
           onClick={() => conversations.refetch()}
           disabled={conversations.isFetching}
         >
           Refresh
-        </button>
+        </Button>
       </div>
       {notice && (
-        <div className="inline-notice" role="status">
-          {notice}
-          <button className="text-button" onClick={() => setNotice('')}>
+        <Alert className="activity-notice" role="status">
+          <AlertDescription>{notice}</AlertDescription>
+          <Button variant="link" size="sm" onClick={() => setNotice('')}>
             Dismiss
-          </button>
-        </div>
+          </Button>
+        </Alert>
       )}
       {conversations.isPending ? (
         <div className="list-state">Loading conversations…</div>
       ) : conversations.isError ? (
         <div className="list-state error">
           Could not load conversations.{' '}
-          <button className="text-button" onClick={() => conversations.refetch()}>
+          <Button variant="link" size="sm" onClick={() => conversations.refetch()}>
             Retry
-          </button>
+          </Button>
         </div>
       ) : conversations.data?.length === 0 ? (
         <div className="list-state">
@@ -145,10 +164,12 @@ export default function Dashboard() {
               <span className="muted">
                 {mailboxes.data?.find((m) => m.id === row.mailboxId)?.email ?? 'Mailbox'}
               </span>
-              <span className="status">{statusLabel(row)}</span>
-              <span className={row.openStatus === 'open_detected' ? 'open' : 'muted'}>
+              <Badge className="status" variant="outline">
+                {statusLabel(row)}
+              </Badge>
+              <Badge variant={row.openStatus === 'open_detected' ? 'default' : 'secondary'}>
                 {row.openStatus === 'open_detected' ? 'Open detected' : 'No open detected'}
-              </span>
+              </Badge>
               <time dateTime={row.updatedAt}>{new Date(row.updatedAt).toLocaleString()}</time>
             </Link>
           ))}

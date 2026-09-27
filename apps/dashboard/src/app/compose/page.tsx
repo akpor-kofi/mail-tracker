@@ -6,6 +6,18 @@ import { Shell } from '@/components/shell';
 import { Editor } from '@/components/editor';
 import { client, unwrap } from '@/lib/api';
 import type { components } from '@mail-tracker/api-client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 type Draft = components['schemas']['DraftInput'];
 const blank: Draft = { mailboxId: '', to: [], cc: [], bcc: [], subject: '', html: '<p></p>' };
 function addresses(value: string) {
@@ -180,19 +192,25 @@ function Composer() {
         <div className="list-state">Connect a Gmail account in Settings before composing.</div>
       ) : (
         <div className="compose-form">
-          <label>
-            From
-            <select value={draft.mailboxId} onChange={(e) => update('mailboxId', e.target.value)}>
-              {mailboxes.data?.map((m) => (
-                <option value={m.id} key={m.id}>
-                  {m.email}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
+          <div className="form-field">
+            <Label htmlFor="from-mailbox">From</Label>
+            <Select value={draft.mailboxId} onValueChange={(value) => update('mailboxId', value)}>
+              <SelectTrigger id="from-mailbox" className="w-full">
+                <SelectValue placeholder="Select a mailbox" />
+              </SelectTrigger>
+              <SelectContent>
+                {mailboxes.data?.map((m) => (
+                  <SelectItem value={m.id} key={m.id}>
+                    {m.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Label htmlFor="to-addresses">
             To
-            <input
+            <Input
+              id="to-addresses"
               value={toText}
               onChange={(e) => {
                 setToText(e.target.value);
@@ -200,76 +218,85 @@ function Composer() {
               }}
               placeholder="person@example.com"
             />
-          </label>
+          </Label>
           <div className="form-grid">
-            <label>
+            <Label htmlFor="cc-addresses">
               Cc
-              <input
+              <Input
+                id="cc-addresses"
                 value={ccText}
                 onChange={(e) => {
                   setCcText(e.target.value);
                   update('cc', addresses(e.target.value));
                 }}
               />
-            </label>
-            <label>
+            </Label>
+            <Label htmlFor="bcc-addresses">
               Bcc
-              <input
+              <Input
+                id="bcc-addresses"
                 value={bccText}
                 onChange={(e) => {
                   setBccText(e.target.value);
                   update('bcc', addresses(e.target.value));
                 }}
               />
-            </label>
+            </Label>
           </div>
-          <label>
+          <Label htmlFor="subject">
             Subject
-            <input value={draft.subject} onChange={(e) => update('subject', e.target.value)} />
-          </label>
-          <label>
-            Message
+            <Input
+              id="subject"
+              value={draft.subject}
+              onChange={(e) => update('subject', e.target.value)}
+            />
+          </Label>
+          <div className="form-field">
+            <Label htmlFor="message-editor">Message</Label>
             <Editor value={draft.html} onChange={(html) => update('html', html)} />
-          </label>
-          <label>
+          </div>
+          <Label htmlFor="attachments">
             Attachments
-            <input type="file" multiple onChange={(e) => upload(e.target.files)} />
-          </label>
+            <Input id="attachments" type="file" multiple onChange={(e) => upload(e.target.files)} />
+          </Label>
           {!!draft.attachments?.length && (
             <p className="muted">{draft.attachments.length} attachment(s) uploaded</p>
           )}
           {draft.to.length + draft.cc.length + draft.bcc.length > 1 && (
             <fieldset className="send-modes">
               <legend>How should this go to multiple people?</legend>
-              <label>
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={mode === 'separate'}
-                  onChange={() => setMode('separate')}
-                />{' '}
-                Separate sends — one message and pixel per To recipient; no Cc or Bcc
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="mode"
-                  checked={mode === 'shared'}
-                  onChange={() => setMode('shared')}
-                />{' '}
-                Shared send — preserve To, Cc and Bcc; tracking is aggregate
-              </label>
+              <RadioGroup
+                value={mode}
+                onValueChange={(value) => setMode(value as 'shared' | 'separate')}
+              >
+                <div className="send-mode-option">
+                  <RadioGroupItem
+                    id="mode-separate"
+                    value="separate"
+                    disabled={!!(draft.cc.length || draft.bcc.length)}
+                  />
+                  <Label htmlFor="mode-separate">
+                    Separate sends — one message and pixel per To recipient; no Cc or Bcc
+                  </Label>
+                </div>
+                <div className="send-mode-option">
+                  <RadioGroupItem id="mode-shared" value="shared" />
+                  <Label htmlFor="mode-shared">
+                    Shared send — preserve To, Cc and Bcc; tracking is aggregate
+                  </Label>
+                </div>
+              </RadioGroup>
             </fieldset>
           )}
           {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
           {message && (
-            <p className="success" role="status">
-              {message}
-            </p>
+            <Alert role="status">
+              <AlertDescription>{message}</AlertDescription>
+            </Alert>
           )}
           {result && (
             <div className="result-list">
@@ -283,10 +310,10 @@ function Composer() {
             </div>
           )}
           <div className="form-actions">
-            <button className="secondary" disabled={busy || !draft.mailboxId} onClick={save}>
+            <Button variant="outline" disabled={busy || !draft.mailboxId} onClick={save}>
               Save draft
-            </button>
-            <button
+            </Button>
+            <Button
               disabled={
                 busy ||
                 !draft.mailboxId ||
@@ -298,7 +325,7 @@ function Composer() {
               onClick={send}
             >
               {busy ? 'Working…' : 'Track and send'}
-            </button>
+            </Button>
           </div>
         </div>
       )}

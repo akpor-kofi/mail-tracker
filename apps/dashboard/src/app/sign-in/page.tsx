@@ -2,6 +2,10 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 export default function SignIn() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -22,34 +26,36 @@ export default function SignIn() {
       <form onSubmit={submit}>
         <h1>Sign in</h1>
         <p>Use the owner account created during setup.</p>
-        <label>
+        <Label htmlFor="email">
           Email
-          <input
+          <Input
+            id="email"
             type="email"
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-        </label>
-        <label>
+        </Label>
+        <Label htmlFor="password">
           Password
-          <input
+          <Input
+            id="password"
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-        </label>
+        </Label>
         {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-        <button disabled={busy} type="submit">
+        <Button disabled={busy} type="submit">
           {busy ? 'Signing in…' : 'Sign in'}
-        </button>
+        </Button>
       </form>
     </main>
   );

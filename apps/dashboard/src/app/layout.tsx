@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Providers } from '@/components/providers';
 import './styles.css';
+
 export const metadata: Metadata = {
   title: 'Mail Tracker',
   description: 'Self-hosted tracking for your Gmail messages',

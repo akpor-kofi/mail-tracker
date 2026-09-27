@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { authClient } from '@/lib/auth-client';
+import { Button } from '@/components/ui/button';
 export function Shell({ children }: { children: React.ReactNode }) {
   const { data, isPending } = authClient.useSession();
   const pathname = usePathname();
@@ -31,15 +32,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar-foot">
           <span>{data.user.email}</span>
-          <button
-            className="text-button"
+          <Button
+            variant="link"
+            size="sm"
+            className="sidebar-logout"
             onClick={async () => {
               await authClient.signOut();
               router.replace('/sign-in');
             }}
           >
             Sign out
-          </button>
+          </Button>
         </div>
       </aside>
       <main className="main">{children}</main>

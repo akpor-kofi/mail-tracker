@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
 import { client, unwrap } from '@/lib/api';
+import { Button } from '@/components/ui/button';
 export default function Drafts() {
   const drafts = useQuery({
     queryKey: ['drafts'],
@@ -18,9 +19,9 @@ export default function Drafts() {
           <h1>Drafts</h1>
           <p>These drafts are saved on this instance.</p>
         </div>
-        <Link className="button" href="/compose">
-          New draft
-        </Link>
+        <Button asChild>
+          <Link href="/compose">New draft</Link>
+        </Button>
       </div>
       {drafts.isPending ? (
         <div className="list-state">Loading drafts…</div>
