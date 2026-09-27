@@ -71,6 +71,9 @@ func TestSeparatePartialAndUnknown(t *testing.T) {
 	if result.Deliveries[0].Status != "sent" || result.Deliveries[1].Status != "failed" || result.Deliveries[2].Status != "unknown" {
 		t.Fatalf("wrong states: %+v", result.Deliveries)
 	}
+	if result.Deliveries[1].Error == "rejected" || result.Deliveries[2].Error == "connection timed out" {
+		t.Fatalf("adapter error leaked into delivery records: %+v", result.Deliveries)
+	}
 	repo.existing = true
 	_, err = service.Send(context.Background(), "owner", "key", "separate", d)
 	if err != nil {

@@ -17,9 +17,11 @@ type Files struct {
 	Dir  string
 }
 
+var ErrInvalidAttachmentSize = errors.New("attachment must be 1 byte to 20 MB")
+
 func (f Files) Save(ctx context.Context, owner, name, kind string, data []byte) (string, error) {
 	if len(data) == 0 || len(data) > 20<<20 {
-		return "", errors.New("attachment must be 1 byte to 20 MB")
+		return "", ErrInvalidAttachmentSize
 	}
 	if mediaType, _, err := mime.ParseMediaType(kind); err == nil {
 		kind = mediaType

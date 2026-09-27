@@ -17,6 +17,8 @@ import (
 
 type Postgres struct{ Pool *pgxpool.Pool }
 
+var ErrDraftAttachment = errors.New("attachment missing or not owned by this account")
+
 func requestHash(d domain.Draft, mode string) ([32]byte, error) {
 	// A local draft ID controls cleanup, not the message sent to Gmail.
 	d.ID = ""
@@ -128,7 +130,10 @@ func (r Postgres) SaveDraft(ctx context.Context, owner, id string, d domain.Draf
 	for _, attachmentID := range d.Attachments {
 		var exists string
 		if err := tx.QueryRow(ctx, `SELECT id FROM attachments WHERE id=$1 AND owner_id=$2 FOR SHARE`, attachmentID, owner).Scan(&exists); err != nil {
-			return DraftRecord{}, errors.New("attachment missing or not owned by this account")
+			if errors.Is(err, pgx.ErrNoRows) {
+				return DraftRecord{}, ErrDraftAttachment
+			}
+			return DraftRecord{}, err
 		}
 	}
 	var at time.Time

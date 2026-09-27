@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -19,12 +20,16 @@ import (
 	trackingapp "github.com/akpor-kofi/mail-tracker/apps/api/internal/tracking/application"
 	trackingdomain "github.com/akpor-kofi/mail-tracker/apps/api/internal/tracking/domain"
 	"github.com/gofiber/fiber/v3"
+	"github.com/jackc/pgx/v5"
 )
 
 type ownerKey struct{}
 
 func owner(ctx context.Context) string { v, _ := ctx.Value(ownerKey{}).(string); return v }
-func bad(err error) error              { return fiber.NewError(400, err.Error()) }
+func internalError(operation string, err error) error {
+	log.Printf("%s: %v", operation, err)
+	return fiber.NewError(500, "internal error")
+}
 func ptr(s string) *string {
 	if s == "" {
 		return nil
@@ -52,12 +57,21 @@ func convOut(c trackingdomain.Conversation) Conversation {
 	return Conversation{Id: c.ID, MailboxId: c.MailboxID, Subject: c.Subject, Status: c.Status, OpenStatus: ConversationOpenStatus(c.OpenStatus), UpdatedAt: c.UpdatedAt}
 }
 func deliveryOut(d corrapp.Delivery) Delivery {
-	return Delivery{Id: d.ID, Recipients: d.Recipients, ReplyAllRecipients: d.ReplyAllRecipients, Status: DeliveryStatus(d.Status), Error: ptr(d.Error), GmailMessageId: ptr(d.GmailMessageID), GmailThreadId: ptr(d.GmailThreadID), RfcMessageId: ptr(d.RFCMessageID)}
+	return Delivery{Id: d.ID, Recipients: d.Recipients, ReplyAllRecipients: d.ReplyAllRecipients, Status: DeliveryStatus(d.Status), Error: safeDeliveryError(d.Status, d.Error), GmailMessageId: ptr(d.GmailMessageID), GmailThreadId: ptr(d.GmailThreadID), RfcMessageId: ptr(d.RFCMessageID)}
+}
+func safeDeliveryError(status, stored string) *string {
+	if stored == "" {
+		return nil
+	}
+	if status == "unknown" {
+		return ptr("Send status unknown; check Gmail Sent before trying again")
+	}
+	return ptr("Gmail send failed; check the mailbox connection and try a new send")
 }
 func detailOut(d trackingdomain.Detail) ConversationDetail {
 	out := ConversationDetail{Id: d.Conversation.ID, MailboxId: d.Conversation.MailboxID, Subject: d.Conversation.Subject, Status: d.Conversation.Status, OpenStatus: ConversationDetailOpenStatus(d.Conversation.OpenStatus), UpdatedAt: d.Conversation.UpdatedAt, Deliveries: []Delivery{}, Events: []OpenEvent{}}
 	for _, x := range d.Deliveries {
-		out.Deliveries = append(out.Deliveries, Delivery{Id: x.ID, Recipients: x.Recipients, ReplyAllRecipients: x.ReplyAllRecipients, Status: DeliveryStatus(x.Status), Error: ptr(x.Error), GmailMessageId: ptr(x.GmailMessageID), GmailThreadId: ptr(x.GmailThreadID), RfcMessageId: ptr(x.RFCMessageID)})
+		out.Deliveries = append(out.Deliveries, Delivery{Id: x.ID, Recipients: x.Recipients, ReplyAllRecipients: x.ReplyAllRecipients, Status: DeliveryStatus(x.Status), Error: safeDeliveryError(x.Status, x.Error), GmailMessageId: ptr(x.GmailMessageID), GmailThreadId: ptr(x.GmailThreadID), RfcMessageId: ptr(x.RFCMessageID)})
 	}
 	for _, e := range d.Events {
 		out.Events = append(out.Events, OpenEvent{DeliveryId: e.DeliveryID, At: e.At})
@@ -85,7 +99,7 @@ func (s *Server) Middleware() StrictMiddlewareFunc {
 			}
 			id, err := s.Auth.Verify(c.Context(), c.Get("Authorization"))
 			if err != nil {
-				return nil, fiber.NewError(401, err.Error())
+				return nil, fiber.NewError(401, "unauthorized")
 			}
 			c.SetContext(context.WithValue(c.Context(), ownerKey{}, id))
 			return next(c, arg)
@@ -139,11 +153,17 @@ func (s *Server) GetDraft(ctx context.Context, r GetDraftRequestObject) (GetDraf
 }
 func (s *Server) SaveDraft(ctx context.Context, r SaveDraftRequestObject) (SaveDraftResponseObject, error) {
 	if r.Body == nil {
-		return nil, bad(errors.New("missing draft"))
+		return nil, fiber.NewError(400, "missing draft")
 	}
 	d, err := s.Correspondence.SaveDraft(ctx, owner(ctx), str(r.Body.Id), draftIn(*r.Body))
 	if err != nil {
-		return nil, bad(err)
+		if errors.Is(err, corrdb.ErrDraftAttachment) {
+			return nil, fiber.NewError(400, corrdb.ErrDraftAttachment.Error())
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fiber.NewError(400, "mailbox or draft not found")
+		}
+		return nil, internalError("save draft", err)
 	}
 	return SaveDraft200JSONResponse(draftOut(d)), nil
 }
@@ -155,7 +175,7 @@ func (s *Server) DeleteDraft(ctx context.Context, r DeleteDraftRequestObject) (D
 }
 func (s *Server) SendTrackedMessage(ctx context.Context, r SendTrackedMessageRequestObject) (SendTrackedMessageResponseObject, error) {
 	if r.Body == nil {
-		return nil, bad(errors.New("missing request"))
+		return nil, fiber.NewError(400, "missing request")
 	}
 	result, err := s.Send.Send(ctx, owner(ctx), r.Body.IdempotencyKey, string(r.Body.SendMode), draftIn(r.Body.Draft))
 	if err != nil {
@@ -163,7 +183,11 @@ func (s *Server) SendTrackedMessage(ctx context.Context, r SendTrackedMessageReq
 		if errors.As(err, &conflict) {
 			return nil, fiber.NewError(409, conflict.Error())
 		}
-		return nil, bad(err)
+		var validation *corrapp.ValidationError
+		if errors.As(err, &validation) {
+			return nil, fiber.NewError(400, validation.Error())
+		}
+		return nil, internalError("send tracked message", err)
 	}
 	out := SendTrackedMessage200JSONResponse{ConversationId: result.ConversationID, Deliveries: []Delivery{}}
 	for _, d := range result.Deliveries {
@@ -191,7 +215,7 @@ func (s *Server) GetConversation(ctx context.Context, r GetConversationRequestOb
 }
 func (s *Server) CreatePairingCode(ctx context.Context, r CreatePairingCodeRequestObject) (CreatePairingCodeResponseObject, error) {
 	if r.Body == nil {
-		return nil, bad(errors.New("missing mailbox"))
+		return nil, fiber.NewError(400, "missing mailbox")
 	}
 	m, _, err := s.MailboxRepo.Get(ctx, r.Body.MailboxId)
 	if err != nil || m.OwnerID != owner(ctx) {
@@ -205,20 +229,22 @@ func (s *Server) CreatePairingCode(ctx context.Context, r CreatePairingCodeReque
 }
 func (s *Server) PairAddon(ctx context.Context, r PairAddonRequestObject) (PairAddonResponseObject, error) {
 	if r.Body == nil {
-		return nil, bad(errors.New("missing request"))
+		return nil, fiber.NewError(400, "missing request")
 	}
 	id, err := s.Addon.Pair(ctx, r.Body.Code, r.Body.IdentityToken)
 	if err != nil {
+		log.Printf("pair add-on: %v", err)
 		return nil, fiber.NewError(401, "invalid pairing code or identity")
 	}
 	return PairAddon200JSONResponse{MailboxId: id}, nil
 }
 func (s *Server) PrepareAddonDraft(ctx context.Context, r PrepareAddonDraftRequestObject) (PrepareAddonDraftResponseObject, error) {
 	if r.Body == nil {
-		return nil, bad(errors.New("missing request"))
+		return nil, fiber.NewError(400, "missing request")
 	}
 	cid, url, err := s.Addon.Prepare(ctx, r.Body.IdentityToken, r.Body.Subject, r.Body.Recipients)
 	if err != nil {
+		log.Printf("prepare add-on draft: %v", err)
 		return nil, fiber.NewError(401, "add-on not paired or invalid identity")
 	}
 	return PrepareAddonDraft200JSONResponse{ConversationId: cid, PixelUrl: url}, nil
@@ -243,14 +269,15 @@ func (s *Server) Pixel(c fiber.Ctx) error {
 func (s *Server) OAuthCallback(c fiber.Ctx) error {
 	email, err := s.Mailbox.Complete(c.Context(), c.Query("state"), c.Query("code"))
 	if err != nil {
-		return fiber.NewError(400, err.Error())
+		log.Printf("Google OAuth callback: %v", err)
+		return fiber.NewError(400, "Gmail connection failed. Please try again.")
 	}
 	return c.Redirect().To("/settings?connected=" + url.QueryEscape(email))
 }
 func (s *Server) Events(c fiber.Ctx) error {
 	id, err := s.Auth.Verify(c.Context(), c.Get("Authorization"))
 	if err != nil {
-		return fiber.NewError(401, err.Error())
+		return fiber.NewError(401, "unauthorized")
 	}
 	events, unsubscribe := s.Addon.Events.Subscribe(id)
 	c.Set("Content-Type", "text/event-stream")

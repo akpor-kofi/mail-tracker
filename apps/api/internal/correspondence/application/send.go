@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -36,6 +37,10 @@ type Repository interface {
 }
 
 var ErrAmbiguous = errors.New("send outcome uncertain")
+
+type ValidationError struct{ Message string }
+
+func (e *ValidationError) Error() string { return e.Message }
 
 type IdempotencyConflict struct {
 	ConversationID string
@@ -68,11 +73,11 @@ type Service struct {
 
 func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Draft) (Result, error) {
 	if key == "" || len(key) > 128 {
-		return Result{}, errors.New("idempotency key is required")
+		return Result{}, &ValidationError{Message: "idempotency key is required and must be at most 128 characters"}
 	}
 	plans, err := domain.Plan(d, mode)
 	if err != nil {
-		return Result{}, err
+		return Result{}, &ValidationError{Message: err.Error()}
 	}
 	deliveries := make([]Delivery, len(plans))
 	for i, p := range plans {
@@ -99,10 +104,12 @@ func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Dra
 		errText := ""
 		if sendErr != nil {
 			status = "failed"
-			errText = sendErr.Error()
+			log.Printf("Gmail send failed for delivery %s: %v", deliveries[i].ID, sendErr)
+			errText = "Gmail send failed; check the mailbox connection and try a new send"
 			var ne net.Error
 			if errors.Is(sendErr, ErrAmbiguous) || errors.Is(sendErr, context.DeadlineExceeded) || errors.Is(sendErr, context.Canceled) || errors.As(sendErr, &ne) {
 				status = "unknown"
+				errText = "Send status unknown; check Gmail Sent before trying again"
 			}
 		}
 		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

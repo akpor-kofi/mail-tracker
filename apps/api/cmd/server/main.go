@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/url"
 	"os"
@@ -19,7 +20,16 @@ import (
 	trackingdb "github.com/akpor-kofi/mail-tracker/apps/api/internal/tracking/adapters"
 	trackingapp "github.com/akpor-kofi/mail-tracker/apps/api/internal/tracking/application"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 )
+
+// A process-wide budget caps database work even when callers rotate tokens or IPs.
+func publicLimit(max int) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max: max, Expiration: time.Minute,
+		KeyGenerator: func(fiber.Ctx) string { return "public" },
+	})
+}
 
 func required(name string) string {
 	value := os.Getenv(name)
@@ -92,12 +102,17 @@ func main() {
 		message := "internal error"
 		if fe, ok := err.(*fiber.Error); ok {
 			code = fe.Code
-			message = fe.Message
+			if code < 500 {
+				message = fe.Message
+			}
+		}
+		if code >= 500 {
+			log.Printf("HTTP %d %s %s: %v", code, c.Method(), c.Path(), err)
 		}
 		return c.Status(code).JSON(fiber.Map{"error": message})
 	}})
-	app.Get("/p/:token", server.Pixel)
-	app.Get("/oauth/google/callback", server.OAuthCallback)
+	app.Get("/p/:token", publicLimit(600), server.Pixel)
+	app.Get("/oauth/google/callback", publicLimit(30), server.OAuthCallback)
 	app.Get("/api/v1/events", server.Events)
 	app.Post("/api/v1/attachments", func(c fiber.Ctx) error {
 		owner, err := server.Auth.Verify(c.Context(), c.Get("Authorization"))
@@ -121,10 +136,16 @@ func main() {
 		}
 		id, err := files.Save(c.Context(), owner, name, c.Get("Content-Type"), data)
 		if err != nil {
-			return fiber.NewError(400, err.Error())
+			if errors.Is(err, corrdb.ErrInvalidAttachmentSize) {
+				return fiber.NewError(400, corrdb.ErrInvalidAttachmentSize.Error())
+			}
+			log.Printf("save attachment: %v", err)
+			return fiber.NewError(500, "internal error")
 		}
 		return c.JSON(fiber.Map{"id": id})
 	})
+	app.Use("/api/v1/addon/pair", publicLimit(20))
+	app.Use("/api/v1/addon/prepare", publicLimit(60))
 	httpapi.RegisterHandlers(app.Group("/api/v1"), httpapi.NewStrictHandler(server, []httpapi.StrictMiddlewareFunc{server.Middleware()}))
 	log.Fatal(app.Listen(":8080"))
 }
