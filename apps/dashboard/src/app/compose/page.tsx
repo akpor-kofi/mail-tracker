@@ -1,5 +1,6 @@
 'use client';
 import { Suspense, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
@@ -185,9 +186,11 @@ function Composer() {
       setResult(sent);
       qc.invalidateQueries({ queryKey: ['conversations'] });
       setMessage(
-        sent.deliveries.every((d) => d.status === 'sent')
-          ? 'Message sent.'
-          : 'Some delivery outcomes need attention.',
+        sent.deliveries.some((d) => d.status === 'pending')
+          ? 'Sending in the background. Open the conversation to follow progress.'
+          : sent.deliveries.every((d) => d.status === 'sent')
+            ? 'Message sent.'
+            : 'Some delivery outcomes need attention.',
       );
     } catch (e) {
       setError(
@@ -317,6 +320,9 @@ function Composer() {
           )}
           {result && (
             <div className="result-list">
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/conversations/${result.conversationId}`}>View send progress</Link>
+              </Button>
               {result.deliveries.map((d) => (
                 <p key={d.id}>
                   <strong>{d.recipients.join(', ')}</strong> —{' '}

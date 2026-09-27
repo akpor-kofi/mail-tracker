@@ -131,6 +131,7 @@ func (s *Server) RemoveMailbox(ctx context.Context, r RemoveMailboxRequestObject
 	if err := s.MailboxRepo.Delete(ctx, owner(ctx), r.MailboxId); err != nil {
 		return nil, err
 	}
+	s.Mailbox.ForgetToken(r.MailboxId)
 	return RemoveMailbox204Response{}, nil
 }
 func (s *Server) ListDrafts(ctx context.Context, _ ListDraftsRequestObject) (ListDraftsResponseObject, error) {

@@ -9,7 +9,7 @@ Self-hosted Gmail open detection for one owner with multiple connected Gmail acc
 | Path | What happens | Send confirmation | Recipient tracking |
 | --- | --- | --- | --- |
 | Gmail add-on | Inserts a 1×1 transparent image at the end of the active Gmail draft | Remains **Prepared** until an image request; Gmail send cannot be confirmed | Aggregate for that draft |
-| Track and Send | Composer sends through the chosen Gmail account using Gmail API | Per-delivery **Sent**, **Failed**, or **Send status unknown** | One pixel per To recipient with **Separate sends**; aggregate with **Shared send** |
+| Track and Send | Composer queues a send through the chosen Gmail account using Gmail API | Starts **Sending**, then shows per-delivery **Sent**, **Failed**, or **Send status unknown** | One pixel per To recipient with **Separate sends**; aggregate with **Shared send** |
 
 The app does not read incoming mail or detect incoming replies. Local composer drafts live on your instance, not Gmail Drafts. Outgoing replies can be prepared in Gmail or composed from a sent conversation in the dashboard.
 

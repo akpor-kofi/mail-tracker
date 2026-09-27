@@ -71,7 +71,7 @@ export default function Dashboard() {
               const packet = buffer.slice(0, index);
               buffer = buffer.slice(index + 2);
               if (packet.includes('event: changed')) {
-                setNotice('Tracking activity updated');
+                setNotice('Activity updated');
                 await qc.invalidateQueries({ queryKey: ['conversations'] });
                 await qc.invalidateQueries({ queryKey: ['conversation'] });
               }

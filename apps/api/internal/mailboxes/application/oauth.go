@@ -19,6 +19,7 @@ import (
 type OAuthService struct {
 	Repo                            Repository
 	Sealer                          platformcrypto.Sealer
+	Cache                           *AccessTokenCache
 	ClientID, ClientSecret, BaseURL string
 }
 
@@ -84,29 +85,32 @@ func (s OAuthService) Complete(ctx context.Context, state, code string) (string,
 	if err := s.Repo.Upsert(ctx, m, encrypted); err != nil {
 		return "", err
 	}
+	if s.Cache != nil {
+		s.Cache.forgetGoogleSub(identity.Subject)
+	}
 	return email, nil
 }
-func (s OAuthService) Token(ctx context.Context, id string) (*oauth2.Token, error) {
-	_, encrypted, err := s.Repo.Get(ctx, id)
+func (s OAuthService) loadCredentials(ctx context.Context, id string) (cachedCredentials, error) {
+	mailbox, encrypted, err := s.Repo.Get(ctx, id)
 	if err != nil {
-		return nil, err
+		return cachedCredentials{}, err
 	}
 	refresh, err := s.Sealer.Open(encrypted)
 	if err != nil {
-		return nil, err
+		return cachedCredentials{}, err
 	}
 	token, err := s.Config().TokenSource(ctx, &oauth2.Token{RefreshToken: refresh}).Token()
 	if err != nil {
-		return nil, err
+		return cachedCredentials{}, err
 	}
 	if token.RefreshToken != "" && token.RefreshToken != refresh {
 		encrypted, err := s.Sealer.Seal(token.RefreshToken)
 		if err != nil {
-			return nil, err
+			return cachedCredentials{}, err
 		}
 		if err := s.Repo.UpdateRefreshToken(ctx, id, encrypted); err != nil {
-			return nil, err
+			return cachedCredentials{}, err
 		}
 	}
-	return token, nil
+	return cachedCredentials{mailbox: mailbox, token: oauth2.Token{AccessToken: token.AccessToken, TokenType: token.TokenType, Expiry: token.Expiry}}, nil
 }

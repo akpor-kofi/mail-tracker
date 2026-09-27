@@ -150,11 +150,7 @@ func BuildMIME(ctx context.Context, m mailboxdomain.Mailbox, d domain.Draft, p d
 	return buf.String(), rfcID, nil
 }
 func (g Gmail) Send(ctx context.Context, mailboxID string, d domain.Draft, p domain.PlannedDelivery, pixelURL string) (corrapp.SentMessage, error) {
-	m, _, err := g.OAuth.Repo.Get(ctx, mailboxID)
-	if err != nil {
-		return corrapp.SentMessage{}, err
-	}
-	tok, err := g.OAuth.Token(ctx, mailboxID)
+	m, tok, err := g.OAuth.Credentials(ctx, mailboxID)
 	if err != nil {
 		return corrapp.SentMessage{}, err
 	}
@@ -182,6 +178,9 @@ func (g Gmail) Send(ctx context.Context, mailboxID string, d domain.Draft, p dom
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusUnauthorized {
+		g.OAuth.ForgetToken(mailboxID)
+	}
 	if resp.StatusCode >= 500 {
 		return corrapp.SentMessage{}, fmt.Errorf("%w: Gmail API %d", corrapp.ErrAmbiguous, resp.StatusCode)
 	}

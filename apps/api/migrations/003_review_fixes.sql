@@ -12,6 +12,8 @@ ALTER TABLE deliveries
   ADD COLUMN recorded_open_count integer NOT NULL DEFAULT 0,
   ADD COLUMN last_open_recorded_at timestamptz;
 
+CREATE INDEX IF NOT EXISTS deliveries_conversation_idx ON deliveries(conversation_id);
+
 WITH ranked AS (
   SELECT id, row_number() OVER (PARTITION BY delivery_id ORDER BY occurred_at DESC, id DESC) AS position
   FROM open_events

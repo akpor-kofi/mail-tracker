@@ -518,7 +518,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description delivery outcomes */
+            /** @description Persisted send attempt. New deliveries start pending and update in the background; repeat idempotency keys return current outcomes. */
             200: {
                 headers: {
                     [name: string]: unknown;

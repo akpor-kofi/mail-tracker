@@ -80,7 +80,7 @@ func (r Postgres) UpdateDelivery(ctx context.Context, id, status string, sent ap
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE conversations SET updated_at=now(),status=CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='pending') THEN 'pending' ELSE 'sent' END WHERE id=(SELECT conversation_id FROM deliveries WHERE id=$1)`, id)
+	_, err = tx.Exec(ctx, `UPDATE conversations SET updated_at=now(),status=CASE WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='pending') THEN 'pending' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='unknown') THEN 'unknown' WHEN EXISTS(SELECT 1 FROM deliveries WHERE conversation_id=conversations.id AND status='failed') THEN 'partial_or_failed' ELSE 'sent' END WHERE id=(SELECT conversation_id FROM deliveries WHERE id=$1)`, id)
 	if err != nil {
 		return err
 	}

@@ -56,7 +56,7 @@ func main() {
 	publicURL := strings.TrimRight(required("PUBLIC_URL"), "/")
 	mailboxes := mailboxdb.Postgres{Pool: pool}
 	pairings := trackingdb.PairingPostgres{Pool: pool}
-	oauth := mailboxapp.OAuthService{Repo: mailboxes, Sealer: sealer, ClientID: required("GOOGLE_CLIENT_ID"), ClientSecret: required("GOOGLE_CLIENT_SECRET"), BaseURL: publicURL}
+	oauth := mailboxapp.OAuthService{Repo: mailboxes, Sealer: sealer, Cache: &mailboxapp.AccessTokenCache{}, ClientID: required("GOOGLE_CLIENT_ID"), ClientSecret: required("GOOGLE_CLIENT_SECRET"), BaseURL: publicURL}
 	correspondence := corrdb.Postgres{Pool: pool}
 	if err := correspondence.RecoverInterrupted(ctx); err != nil {
 		log.Fatal(err)
@@ -111,7 +111,7 @@ func main() {
 	}()
 	sender := corrdb.Gmail{OAuth: oauth, Attachments: files}
 	addon := trackingapp.AddonService{Pairs: pairings, Tracking: tracking, Identity: trackingdb.GoogleIdentity{ClientID: required("GOOGLE_ADDON_CLIENT_ID")}, PublicURL: publicURL, Events: broker}
-	server := &httpapi.Server{Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL}, Tracking: tracking, Addon: addon}
+	server := &httpapi.Server{Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL, Slots: make(chan struct{}, 4)}, Tracking: tracking, Addon: addon}
 	app := fiber.New(fiber.Config{BodyLimit: 21 << 20, ErrorHandler: func(c fiber.Ctx, err error) error {
 		code := 500
 		message := "internal error"

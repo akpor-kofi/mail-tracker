@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/akpor-kofi/mail-tracker/apps/api/internal/correspondence/domain"
@@ -69,6 +70,7 @@ type Service struct {
 	Files     AttachmentStore
 	Events    EventDelivery
 	PublicURL string
+	Slots     chan struct{}
 }
 
 func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Draft) (Result, error) {
@@ -94,36 +96,86 @@ func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Dra
 	if existing {
 		return s.Repo.GetResult(ctx, owner, cid)
 	}
-	result := Result{ConversationID: cid, Deliveries: deliveries}
-	for i, p := range plans {
-		pixelURL := fmt.Sprintf("%s/p/%s.gif", s.PublicURL, deliveries[i].PixelToken)
-		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		sent, sendErr := s.Sender.Send(sendCtx, d.MailboxID, d, p, pixelURL)
-		cancel()
+	response := append([]Delivery(nil), deliveries...)
+	for i := range response {
+		response[i].PixelToken = ""
+	}
+	if s.Events != nil {
+		s.Events.Publish(owner)
+	}
+	go s.run(owner, d, plans, deliveries)
+	return Result{ConversationID: cid, Deliveries: response}, nil
+}
+
+type sendOutcome struct {
+	index int
+	sent  SentMessage
+	err   error
+}
+
+func (s Service) run(owner string, d domain.Draft, plans []domain.PlannedDelivery, deliveries []Delivery) {
+	jobs := make(chan int)
+	outcomes := make(chan sendOutcome)
+	workers := min(4, len(plans))
+	var running sync.WaitGroup
+	for range workers {
+		running.Add(1)
+		go func() {
+			defer running.Done()
+			for i := range jobs {
+				if s.Slots != nil {
+					s.Slots <- struct{}{}
+				}
+				pixelURL := fmt.Sprintf("%s/p/%s.gif", s.PublicURL, deliveries[i].PixelToken)
+				sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				sent, sendErr := s.Sender.Send(sendCtx, d.MailboxID, d, plans[i], pixelURL)
+				cancel()
+				if s.Slots != nil {
+					<-s.Slots
+				}
+				outcomes <- sendOutcome{index: i, sent: sent, err: sendErr}
+			}
+		}()
+	}
+	go func() {
+		for i := range plans {
+			jobs <- i
+		}
+		close(jobs)
+		running.Wait()
+		close(outcomes)
+	}()
+	for outcome := range outcomes {
+		i := outcome.index
 		status := "sent"
 		errText := ""
-		if sendErr != nil {
+		if outcome.err != nil {
 			status = "failed"
-			log.Printf("Gmail send failed for delivery %s: %v", deliveries[i].ID, sendErr)
+			log.Printf("Gmail send failed for delivery %s: %v", deliveries[i].ID, outcome.err)
 			errText = "Gmail send failed; check the mailbox connection and try a new send"
 			var ne net.Error
-			if errors.Is(sendErr, ErrAmbiguous) || errors.Is(sendErr, context.DeadlineExceeded) || errors.Is(sendErr, context.Canceled) || errors.As(sendErr, &ne) {
+			if errors.Is(outcome.err, ErrAmbiguous) || errors.Is(outcome.err, context.DeadlineExceeded) || errors.Is(outcome.err, context.Canceled) || errors.As(outcome.err, &ne) {
 				status = "unknown"
 				errText = "Send status unknown; check Gmail Sent before trying again"
 			}
 		}
-		persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		err = s.Repo.UpdateDelivery(persistCtx, deliveries[i].ID, status, sent, errText)
-		persistCancel()
-		if err != nil {
-			return Result{}, err
+		var persistErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			persistErr = s.Repo.UpdateDelivery(persistCtx, deliveries[i].ID, status, outcome.sent, errText)
+			cancel()
+			if persistErr == nil {
+				break
+			}
+			if attempt < 2 {
+				time.Sleep(time.Duration(attempt+1) * 250 * time.Millisecond)
+			}
+		}
+		if persistErr != nil {
+			log.Printf("persist delivery %s: %v", deliveries[i].ID, persistErr)
+			continue
 		}
 		deliveries[i].Status = status
-		deliveries[i].GmailMessageID = sent.GmailID
-		deliveries[i].GmailThreadID = sent.ThreadID
-		deliveries[i].RFCMessageID = sent.RFCMessageID
-		deliveries[i].Error = errText
-		deliveries[i].PixelToken = ""
 		if s.Events != nil {
 			s.Events.Publish(owner)
 		}
@@ -135,12 +187,15 @@ func (s Service) Send(ctx context.Context, owner, key, mode string, d domain.Dra
 		}
 	}
 	if allSent && d.ID != "" {
-		_ = s.Repo.DeleteDraft(context.WithoutCancel(ctx), owner, d.ID)
+		if err := s.Repo.DeleteDraft(context.Background(), owner, d.ID); err != nil {
+			log.Printf("delete sent draft %s: %v", d.ID, err)
+		}
 	}
 	if allSent && s.Files != nil {
 		for _, id := range d.Attachments {
-			_ = s.Files.Delete(context.WithoutCancel(ctx), id)
+			if err := s.Files.Delete(context.Background(), id); err != nil {
+				log.Printf("delete sent attachment %s: %v", id, err)
+			}
 		}
 	}
-	return result, nil
 }

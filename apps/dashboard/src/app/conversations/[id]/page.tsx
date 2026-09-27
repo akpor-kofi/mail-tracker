@@ -10,6 +10,8 @@ export default function ConversationPage() {
   const params = useParams<{ id: string }>();
   const detail = useQuery({
     queryKey: ['conversation', params.id],
+    refetchInterval: (query) =>
+      query.state.data?.deliveries.some((delivery) => delivery.status === 'pending') ? 2000 : false,
     queryFn: async () => {
       const { api } = await client();
       return unwrap(

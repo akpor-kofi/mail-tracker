@@ -34,6 +34,10 @@ try {
     'owner request',
   );
   const owner = (await pool.query('SELECT id FROM "user" WHERE email=$1', [email])).rows[0].id;
+  const deliveryIndex = await pool.query(
+    `SELECT 1 FROM pg_indexes WHERE schemaname=current_schema() AND indexname='deliveries_conversation_idx'`,
+  );
+  assert.equal(deliveryIndex.rowCount, 1, 'delivery conversation index');
   mailboxID = randomUUID();
   const conversationID = randomUUID();
   const deliveryID = randomUUID();
@@ -183,15 +187,32 @@ try {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ draft: message, sendMode: 'shared', idempotencyKey: sendKey }),
     });
+  const sendStream = await fetch(`${apiURL}/api/v1/events`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(sendStream.status, 200, 'send status stream');
+  const sendReader = sendStream.body.getReader();
+  assert.match(new TextDecoder().decode((await sendReader.read()).value), /event: ready/);
   const firstSend = await send(draft);
   assert.equal(firstSend.status, 200, 'first send attempt was recorded');
   const firstResult = await firstSend.json();
-  assert.equal(firstResult.deliveries[0].status, 'failed', 'dummy mailbox cannot send');
-  const failedConversation = await fetch(
-    `${apiURL}/api/v1/conversations/${firstResult.conversationId}`,
-    { headers: { authorization: `Bearer ${token}` } },
-  );
-  assert.equal((await failedConversation.json()).status, 'partial_or_failed');
+  assert.equal(firstResult.deliveries[0].status, 'pending', 'send is accepted asynchronously');
+  const sendChanged = await Promise.race([
+    sendReader.read(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('send status SSE missing')), 5000)),
+  ]);
+  assert.match(new TextDecoder().decode(sendChanged.value), /event: changed/);
+  await sendReader.cancel();
+  let failedConversation;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const response = await fetch(`${apiURL}/api/v1/conversations/${firstResult.conversationId}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    failedConversation = await response.json();
+    if (failedConversation.status === 'partial_or_failed') break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(failedConversation.status, 'partial_or_failed', 'background send outcome persisted');
   const repeatSend = await send(draft);
   assert.equal(repeatSend.status, 200, 'same request may be retried');
   assert.equal((await repeatSend.json()).conversationId, firstResult.conversationId);
