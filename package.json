@@ -1,0 +1,16 @@
+{
+  "name": "mail-tracker",
+  "private": true,
+  "packageManager": "pnpm@11.6.0",
+  "scripts": {
+    "dev": "pnpm --filter dashboard dev",
+    "build": "pnpm --filter api-client build && pnpm --filter dashboard build",
+    "typecheck": "pnpm -r typecheck",
+    "generate": "pnpm --filter api-client generate",
+    "check:generated": "pnpm generate && git diff --exit-code -- apps/api/internal/httpapi/generated.go packages/api-client/src/schema.d.ts"
+  },
+  "devDependencies": {
+    "pg": "^8.23.0",
+    "prettier": "^3.9.9"
+  }
+}

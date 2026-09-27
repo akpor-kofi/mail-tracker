@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+.env
+.env.*
+!.env.example
+.coverage/
+*.test
+.DS_Store
+apps/api/data/
+apps/gmail-addon/.clasp.json
+apps/gmail-addon/src/Config.gs
+apps/gmail-addon/src/appsscript.json
+*.tsbuildinfo

@@ -1,0 +1,159 @@
+'use client';
+import Link from 'next/link';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { Shell } from '@/components/shell';
+import { client, unwrap } from '@/lib/api';
+import type { components } from '@mail-tracker/api-client';
+
+type Conversation = components['schemas']['Conversation'];
+function statusLabel(row: Conversation) {
+  if (row.status === 'prepared') return 'Prepared';
+  if (row.status === 'unknown') return 'Send status unknown';
+  if (row.status === 'partial_or_failed') return 'Partial or failed send';
+  if (row.status === 'pending') return 'Sending';
+  return 'Sent';
+}
+export default function Dashboard() {
+  const [mailboxId, setMailboxId] = useState('');
+  const [notice, setNotice] = useState('');
+  const qc = useQueryClient();
+  const mailboxes = useQuery({
+    queryKey: ['mailboxes'],
+    queryFn: async () => {
+      const { api } = await client();
+      return unwrap(await api.GET('/mailboxes'));
+    },
+  });
+  const conversations = useQuery({
+    queryKey: ['conversations', mailboxId],
+    queryFn: async () => {
+      const { api } = await client();
+      return unwrap(
+        await api.GET('/conversations', { params: { query: mailboxId ? { mailboxId } : {} } }),
+      );
+    },
+  });
+  useEffect(() => {
+    let stopped = false;
+    let controller: AbortController | undefined;
+    async function connect() {
+      while (!stopped) {
+        try {
+          const { token } = await client();
+          controller = new AbortController();
+          const response = await fetch('/api/v1/events', {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          if (!response.ok || !response.body) throw new Error('Stream disconnected');
+          await qc.invalidateQueries({ queryKey: ['conversations'] });
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (!stopped) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let index;
+            while ((index = buffer.indexOf('\n\n')) >= 0) {
+              const packet = buffer.slice(0, index);
+              buffer = buffer.slice(index + 2);
+              if (packet.includes('event: changed')) {
+                setNotice('Tracking activity updated');
+                await qc.invalidateQueries({ queryKey: ['conversations'] });
+                await qc.invalidateQueries({ queryKey: ['conversation'] });
+              }
+            }
+          }
+        } catch {
+          if (!stopped) setNotice('Live updates disconnected. Reconnecting…');
+        }
+        if (!stopped) await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    }
+    connect();
+    return () => {
+      stopped = true;
+      controller?.abort();
+    };
+  }, [qc]);
+  return (
+    <Shell>
+      <div className="page-header">
+        <div>
+          <h1>Conversations</h1>
+          <p>Open detection depends on the recipient&apos;s mail client loading images.</p>
+        </div>
+        <Link className="button" href="/compose">
+          Compose
+        </Link>
+      </div>
+      <div className="toolbar">
+        <label>
+          Mailbox
+          <select value={mailboxId} onChange={(e) => setMailboxId(e.target.value)}>
+            <option value="">All mailboxes</option>
+            {mailboxes.data?.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.email}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="secondary"
+          onClick={() => conversations.refetch()}
+          disabled={conversations.isFetching}
+        >
+          Refresh
+        </button>
+      </div>
+      {notice && (
+        <div className="inline-notice" role="status">
+          {notice}
+          <button className="text-button" onClick={() => setNotice('')}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {conversations.isPending ? (
+        <div className="list-state">Loading conversations…</div>
+      ) : conversations.isError ? (
+        <div className="list-state error">
+          Could not load conversations.{' '}
+          <button className="text-button" onClick={() => conversations.refetch()}>
+            Retry
+          </button>
+        </div>
+      ) : conversations.data?.length === 0 ? (
+        <div className="list-state">
+          <strong>No tracked messages yet</strong>
+          <p>Connect a Gmail account, then send from the composer or prepare a draft in Gmail.</p>
+          <Link href="/settings">Connect Gmail</Link>
+        </div>
+      ) : (
+        <div className="conversation-list" role="list">
+          {conversations.data?.map((row) => (
+            <Link
+              role="listitem"
+              href={`/conversations/${row.id}`}
+              className="conversation-row"
+              key={row.id}
+            >
+              <span className="subject">{row.subject}</span>
+              <span className="muted">
+                {mailboxes.data?.find((m) => m.id === row.mailboxId)?.email ?? 'Mailbox'}
+              </span>
+              <span className="status">{statusLabel(row)}</span>
+              <span className={row.openStatus === 'open_detected' ? 'open' : 'muted'}>
+                {row.openStatus === 'open_detected' ? 'Open detected' : 'No open detected'}
+              </span>
+              <time dateTime={row.updatedAt}>{new Date(row.updatedAt).toLocaleString()}</time>
+            </Link>
+          ))}
+        </div>
+      )}
+    </Shell>
+  );
+}

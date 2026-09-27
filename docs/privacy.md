@@ -1,0 +1,7 @@
+# Privacy and limitations
+
+The public pixel endpoint stores only the delivery ID and request timestamp. It does not intentionally store IP addresses, user-agent strings, or geolocation. The request token is unguessable; only its SHA-256 hash is stored. The API does not keep recipient mail contents, but it stores subject, recipient addresses, delivery states, Gmail identifiers, and local drafts. Files attached to a composer send are held on the instance volume; files for a fully confirmed send are deleted after completion. Keep database, attachment volume, and secrets private and backed up.
+
+A requested image supports the label **Open detected**, not “read.” No request supports **No open detected**, not “unread.” Google and Apple may proxy, prefetch, or cache images. Repeated requests are events, not proof of repeated human opens. The sender's own draft preview may request the image. A single shared pixel cannot identify which recipient caused a request. The add-on path cannot confirm when Gmail sends the draft.
+
+You are responsible for using tracking in a way that respects recipient expectations and applicable law. This project has no hosted service, shared relay, or central telemetry. Caddy is configured without access logging; reverse proxies added by an operator may log requests separately.

@@ -1,0 +1,12 @@
+{
+  "name": "gmail-addon",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "configure": "node scripts/configure.mjs",
+    "check": "node --check < src/Code.gs"
+  },
+  "devDependencies": {
+    "@google/clasp": "3.4.1"
+  }
+}

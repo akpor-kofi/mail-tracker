@@ -1,0 +1,10 @@
+package: httpapi
+generate:
+  fiber-v3-server: true
+  strict-server: true
+  models: true
+output: internal/httpapi/generated.go
+output-options:
+  exclude-operation-ids:
+    - streamEvents
+    - uploadAttachment

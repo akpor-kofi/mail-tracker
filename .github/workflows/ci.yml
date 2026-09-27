@@ -1,0 +1,50 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.1'
+          cache-dependency-path: apps/api/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.6.0'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm generate
+      - run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config oapi-codegen.yaml ../../packages/api-contract/openapi.yaml
+        working-directory: apps/api
+      - run: git diff --exit-code -- apps/api/internal/httpapi/generated.go packages/api-client/src/schema.d.ts
+      - run: go test ./...
+        working-directory: apps/api
+      - run: pnpm typecheck
+      - run: pnpm --filter gmail-addon check
+      - run: BETTER_AUTH_SECRET=build-only-placeholder-secret-not-used-in-production PUBLIC_URL=https://example.invalid DATABASE_URL=postgres://unused:unused@localhost/unused pnpm build
+      - run: docker compose --env-file infra/.env.example -f infra/compose.yaml config --quiet
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/create-smoke-env.mjs
+      - run: docker compose --env-file infra/.env -f infra/compose.yaml up -d --build postgres api dashboard
+      - run: |
+          for i in $(seq 1 30); do
+            docker compose --env-file infra/.env -f infra/compose.yaml exec -T dashboard node -e 'fetch("http://127.0.0.1:3000/sign-in").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' && exit 0
+            sleep 2
+          done
+          exit 1
+      - run: docker compose --env-file infra/.env -f infra/compose.yaml exec -T dashboard sh -lc 'cd apps/dashboard && pnpm exec auth create-admin --email owner@example.invalid --name Owner --role admin --password DummyPassword123456789'
+      - run: docker compose --env-file infra/.env -f infra/compose.yaml exec -T -e TEST_OWNER_EMAIL=owner@example.invalid -e TEST_OWNER_PASSWORD=DummyPassword123456789 dashboard node tests/smoke.mjs
+      - if: always()
+        run: if test -f infra/.env; then docker compose --env-file infra/.env -f infra/compose.yaml down -v; fi

@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mailtracker
+      POSTGRES_USER: mailtracker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mailtracker -d mailtracker']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build:
+      context: ../apps/api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mailtracker:${POSTGRES_PASSWORD}@postgres:5432/mailtracker?sslmode=disable
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+      INSTANCE_SECRET: ${INSTANCE_SECRET:?set INSTANCE_SECRET}
+      OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET}
+      GOOGLE_ADDON_CLIENT_ID: ${GOOGLE_ADDON_CLIENT_ID:?set GOOGLE_ADDON_CLIENT_ID}
+      JWKS_URL: http://dashboard:3000/api/auth/jwks
+      ATTACHMENT_DIR: /app/data
+    volumes:
+      - attachments:/app/data
+  dashboard:
+    build:
+      context: ..
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mailtracker:${POSTGRES_PASSWORD}@postgres:5432/mailtracker?sslmode=disable
+      PUBLIC_URL: ${PUBLIC_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      OWNER_EMAIL: ${OWNER_EMAIL:?set OWNER_EMAIL}
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - dashboard
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      TRACKER_DOMAIN: ${TRACKER_DOMAIN:?set TRACKER_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  postgres_data:
+  attachments:
+  caddy_data:
+  caddy_config:

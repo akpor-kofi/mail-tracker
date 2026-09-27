@@ -1,0 +1,324 @@
+openapi: 3.0.3
+info:
+  title: Mail Tracker API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - owner: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /mailboxes:
+    get:
+      operationId: listMailboxes
+      responses:
+        '200':
+          description: connected mailboxes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Mailbox' }
+  /mailboxes/connect:
+    post:
+      operationId: startMailboxConnect
+      responses:
+        '200':
+          description: Google authorization URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConnectURL' }
+  /mailboxes/{mailboxId}:
+    delete:
+      operationId: removeMailbox
+      parameters:
+        - { name: mailboxId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: removed }
+  /drafts:
+    get:
+      operationId: listDrafts
+      responses:
+        '200':
+          description: saved drafts
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Draft' } }
+    post:
+      operationId: saveDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftInput' }
+      responses:
+        '200':
+          description: saved draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Draft' }
+  /drafts/{draftId}:
+    get:
+      operationId: getDraft
+      parameters:
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Draft' }
+    delete:
+      operationId: deleteDraft
+      parameters:
+        - { name: draftId, in: path, required: true, schema: { type: string } }
+      responses:
+        '204': { description: deleted }
+  /send:
+    post:
+      operationId: sendTrackedMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendInput' }
+      responses:
+        '200':
+          description: delivery outcomes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendResult' }
+  /events:
+    get:
+      operationId: streamEvents
+      description: Authenticated server-sent event stream. Reconnect and refetch after interruption.
+      responses:
+        '200':
+          description: live updates
+          content:
+            text/event-stream:
+              schema: { type: string }
+  /attachments:
+    post:
+      operationId: uploadAttachment
+      description: Upload one temporary attachment, at most 20 MB.
+      parameters:
+        - { name: X-File-Name, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: stored attachment identifier
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentResult' }
+  /conversations:
+    get:
+      operationId: listConversations
+      parameters:
+        - { name: mailboxId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: conversations
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Conversation' } }
+  /conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: conversation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversationDetail' }
+  /pairing-codes:
+    post:
+      operationId: createPairingCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PairingCodeInput' }
+      responses:
+        '200':
+          description: one-use pairing code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PairingCode' }
+  /addon/pair:
+    post:
+      operationId: pairAddon
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddonPairInput' }
+      responses:
+        '200':
+          description: paired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddonPairResult' }
+  /addon/prepare:
+    post:
+      operationId: prepareAddonDraft
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddonPrepareInput' }
+      responses:
+        '200':
+          description: pixel URL to insert
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddonPrepareResult' }
+components:
+  securitySchemes:
+    owner: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    AttachmentResult:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    ConnectURL:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string }
+    Mailbox:
+      type: object
+      required: [id, email, connectedAt]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        connectedAt: { type: string, format: date-time }
+    DraftInput:
+      type: object
+      required: [mailboxId, to, cc, bcc, subject, html]
+      properties:
+        id: { type: string }
+        mailboxId: { type: string }
+        to: { type: array, items: { type: string } }
+        cc: { type: array, items: { type: string } }
+        bcc: { type: array, items: { type: string } }
+        subject: { type: string }
+        html: { type: string }
+        replyToMessageId: { type: string }
+        threadId: { type: string }
+        attachments: { type: array, items: { type: string } }
+    Draft:
+      allOf:
+        - { $ref: '#/components/schemas/DraftInput' }
+        - type: object
+          required: [id, updatedAt]
+          properties:
+            id: { type: string }
+            updatedAt: { type: string, format: date-time }
+    SendInput:
+      type: object
+      required: [draft, sendMode, idempotencyKey]
+      properties:
+        draft: { $ref: '#/components/schemas/DraftInput' }
+        sendMode: { type: string, enum: [shared, separate] }
+        idempotencyKey: { type: string }
+    SendResult:
+      type: object
+      required: [conversationId, deliveries]
+      properties:
+        conversationId: { type: string }
+        deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } }
+    Delivery:
+      type: object
+      required: [id, recipients, status]
+      properties:
+        id: { type: string }
+        recipients: { type: array, items: { type: string } }
+        status: { type: string, enum: [pending, sent, failed, unknown, prepared] }
+        error: { type: string }
+        gmailMessageId: { type: string }
+        gmailThreadId: { type: string }
+        rfcMessageId: { type: string }
+    Conversation:
+      type: object
+      required: [id, mailboxId, subject, status, openStatus, updatedAt]
+      properties:
+        id: { type: string }
+        mailboxId: { type: string }
+        subject: { type: string }
+        status: { type: string }
+        openStatus: { type: string, enum: [no_open_detected, open_detected] }
+        updatedAt: { type: string, format: date-time }
+    ConversationDetail:
+      allOf:
+        - { $ref: '#/components/schemas/Conversation' }
+        - type: object
+          required: [deliveries, events]
+          properties:
+            deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } }
+            events: { type: array, items: { $ref: '#/components/schemas/OpenEvent' } }
+    OpenEvent:
+      type: object
+      required: [deliveryId, at]
+      properties:
+        deliveryId: { type: string }
+        at: { type: string, format: date-time }
+    PairingCodeInput:
+      type: object
+      required: [mailboxId]
+      properties:
+        mailboxId: { type: string }
+    PairingCode:
+      type: object
+      required: [code, expiresAt]
+      properties:
+        code: { type: string }
+        expiresAt: { type: string, format: date-time }
+    AddonPairInput:
+      type: object
+      required: [code, identityToken]
+      properties:
+        code: { type: string }
+        identityToken: { type: string }
+    AddonPairResult:
+      type: object
+      required: [mailboxId]
+      properties:
+        mailboxId: { type: string }
+    AddonPrepareInput:
+      type: object
+      required: [identityToken, subject, recipients]
+      properties:
+        identityToken: { type: string }
+        subject: { type: string }
+        recipients: { type: array, items: { type: string } }
+    AddonPrepareResult:
+      type: object
+      required: [conversationId, pixelUrl]
+      properties:
+        conversationId: { type: string }
+        pixelUrl: { type: string }
