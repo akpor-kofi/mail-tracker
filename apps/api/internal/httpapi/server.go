@@ -119,7 +119,7 @@ func (s *Server) Pixel(c fiber.Ctx) error {
 	c.Set("Content-Type", "image/gif")
 	c.Set("Cache-Control", "no-store, no-cache, max-age=0")
 	c.Set("X-Content-Type-Options", "nosniff")
-	return c.Send([]byte{71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 0, 255, 255, 255, 33, 249, 4, 1, 0, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59})
+	return c.Send([]byte{71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255, 33, 249, 4, 1, 0, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59})
 }
 func (s *Server) OAuthCallback(c fiber.Ctx) error {
 	email, err := s.Mailbox.Complete(c.Context(), c.Query("state"), c.Query("code"))

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -36,6 +37,27 @@ func TestDomainRoutesRequireOwner(t *testing.T) {
 	response.Body.Close()
 	if response.StatusCode != 200 {
 		t.Errorf("health: got %d, want 200", response.StatusCode)
+	}
+}
+
+func TestPixelRemainsValidGIF(t *testing.T) {
+	app := fiber.New()
+	server := &Server{}
+	app.Get("/p/:token", server.Pixel)
+	response, err := app.Test(httptest.NewRequest("GET", "/p/invalid.gif", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 || response.Header.Get("Content-Type") != "image/gif" {
+		t.Fatalf("pixel response: status %d, content type %q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 43 {
+		t.Fatalf("pixel is %d bytes, want 43", len(data))
 	}
 }
 
