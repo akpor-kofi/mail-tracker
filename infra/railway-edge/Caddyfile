@@ -1,0 +1,23 @@
+{
+  auto_https off
+}
+
+:8080 {
+  encode zstd gzip
+
+  @health path /healthz
+  respond @health "ok" 200
+
+  @api path /api/v1/* /oauth/google/callback /p/*
+  handle @api {
+    reverse_proxy api.railway.internal:8080 {
+      header_up X-Forwarded-Proto https
+    }
+  }
+
+  handle {
+    reverse_proxy dashboard.railway.internal:3000 {
+      header_up X-Forwarded-Proto https
+    }
+  }
+}
