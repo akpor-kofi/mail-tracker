@@ -24,7 +24,7 @@ Railway uses four services in one project: `Postgres`, `api`, `dashboard`, and a
 
    Generate `INSTANCE_SECRET` with `openssl rand -base64 32` and `BETTER_AUTH_SECRET` with `openssl rand -hex 32`. Save both in a password manager. Losing `INSTANCE_SECRET` makes stored Gmail refresh tokens unreadable. Keep all secrets in Railway variables, away from Git.
 5. In your Google Cloud project, enable the Gmail API and create an external OAuth web client. Add `PUBLIC_URL/oauth/google/callback` as its exact authorized redirect URI. Follow [Google Cloud setup](google-cloud.md). Deploy the three services after setting their variables.
-6. Create the only dashboard owner account with the dashboard container's `auth create-admin` command, then sign in at `PUBLIC_URL` and connect your Gmail account. Follow [Gmail add-on setup](gmail-addon.md) if you want the Gmail draft workflow.
+6. Create the only dashboard owner account once: set `BOOTSTRAP_PASSWORD` on `dashboard` to a new strong password, set its pre-deploy command to `node apps/dashboard/scripts/bootstrap-owner.mjs`, and deploy. After the command succeeds, clear the pre-deploy command and remove `BOOTSTRAP_PASSWORD` from Railway. Save that password securely. Sign in at `PUBLIC_URL` and connect your Gmail account. Follow [Gmail add-on setup](gmail-addon.md) if you want the Gmail draft workflow.
 
 The dashboard and Go service each migrate their schema at startup, using a shared PostgreSQL advisory lock. A restart keeps the database and attachment volume. Do not delete either volume when redeploying.
 
