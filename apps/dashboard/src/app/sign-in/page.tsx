@@ -1,6 +1,7 @@
 'use client';
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +57,7 @@ export default function SignIn() {
         <Button disabled={busy} type="submit">
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
+        <p><Link href="/about">About</Link> · <Link href="/privacy">Privacy</Link></p>
       </form>
     </main>
   );
