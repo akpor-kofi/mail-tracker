@@ -22,6 +22,8 @@ The app does not read incoming mail or detect incoming replies. Local composer d
 
 ## Deploy
 
+For a GitHub-connected deployment with an automatically assigned HTTPS address, follow the [Railway guide](docs/railway.md). The Docker Compose instructions below are for a server you manage yourself.
+
 1. Clone this repository with `git clone https://github.com/akpor-kofi/mail-tracker.git && cd mail-tracker`. Copy [`infra/.env.example`](infra/.env.example) to `infra/.env`, set `TRACKER_DOMAIN`, `PUBLIC_URL`, and `OWNER_EMAIL`, then fill the secrets. Generate values with `openssl rand -hex 32` for `POSTGRES_PASSWORD` and `BETTER_AUTH_SECRET`, and `openssl rand -base64 32` for `INSTANCE_SECRET`. Back up these exact values; losing the instance secret makes stored Gmail refresh tokens unreadable.
 2. Follow [Google Cloud setup](docs/google-cloud.md) to fill `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_ADDON_CLIENT_ID`.
 3. Start the stack:

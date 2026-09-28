@@ -1,3 +1,4 @@
+# Build from the monorepo root so pnpm can resolve the shared API packages.
 FROM node:22-alpine AS build
 WORKDIR /repo
 RUN corepack enable && corepack prepare pnpm@11.6.0 --activate

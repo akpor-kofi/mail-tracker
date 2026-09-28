@@ -1,4 +1,5 @@
 {
+  # Railway terminates public TLS before forwarding to this private HTTP router.
   auto_https off
 }
 
