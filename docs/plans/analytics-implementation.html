@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mail Tracker — Analytics Implementation Plan</title>
+<style>
+:root{color-scheme:light;--ink:#182c36;--muted:#526772;--line:#d8e3e6;--accent:#006b68;--paper:#fff;--wash:#f0f6f5}*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:17px/1.65 system-ui,-apple-system,sans-serif}main{max-width:1150px;margin:auto;background:var(--paper);padding:64px 64px 90px}header{border-bottom:3px solid var(--accent);padding-bottom:32px}h1{font-size:clamp(32px,5vw,52px);line-height:1.12;letter-spacing:-1.5px;max-width:900px}h2{font-size:29px;line-height:1.3;margin:52px 0 18px;scroll-margin-top:24px}h3{font-size:21px;margin:30px 0 10px}p{margin:12px 0}a{color:var(--accent);text-underline-offset:3px}li{margin:8px 0}nav{background:var(--wash);padding:24px;border-radius:12px;margin:28px 0}nav ol{columns:2;margin:0;padding-left:25px}table{border-collapse:collapse;width:100%;font-size:15px;margin:20px 0}th,td{border:1px solid var(--line);padding:12px;text-align:left;vertical-align:top}th{background:var(--wash)}.table-wrap{overflow-x:auto}.eyebrow{color:var(--accent);font-weight:750;text-transform:uppercase;letter-spacing:2px;font-size:13px}.lead{font-size:21px;max-width:920px}.note{border-left:4px solid var(--accent);padding:16px 20px;background:var(--wash);margin:24px 0}.muted{color:var(--muted)}pre{background:#142832;color:#e1f2ef;padding:24px;border-radius:10px;overflow:auto;font:14px/1.55 ui-monospace,SFMono-Regular,monospace;tab-size:2}code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.88em}pre code{font-size:inherit}.phase{border:1px solid var(--line);padding:22px;margin:22px 0;border-radius:12px}.phase h3{margin-top:0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0}.card{padding:20px;border:1px solid var(--line);border-radius:12px}.card strong{display:block;font-size:21px}.diagram{background:var(--wash);padding:24px;font-size:15px;border-radius:10px;white-space:pre-wrap;overflow:auto}details{border:1px solid var(--line);border-radius:10px;margin:14px 0;padding:16px}summary{cursor:pointer;font-weight:700}footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}@media(max-width:750px){main{padding:32px 20px}nav ol{columns:1}.cards{grid-template-columns:1fr}th,td{padding:9px}body{font-size:16px}}@media print{body{background:white}main{padding:0}nav{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}h2{break-after:avoid}.phase{break-inside:avoid}}
+</style>
+</head>
+<body><main>
+<header>
+<p class="eyebrow">Product &amp; engineering roadmap · 4 October 2026</p>
+<h1>Mail Tracker: from open detection to conversation intelligence</h1>
+<p class="lead">A repository-grounded plan for conversation analytics, repeat activity, tracked links, PDF/image viewing, Gmail synchronization, conversions, and trustworthy reporting.</p>
+<p class="muted">Planning document. Proposed schemas, endpoints, and snippets describe future work; they are not deployed features. Estimates assume one experienced full-time engineer and existing infrastructure.</p>
+</header>
+<div class="cards"><div class="card"><strong>Build first</strong>Reliable event data, conversation analytics, tracked links.</div><div class="card"><strong>Build next</strong>Hosted documents, conversions, optional Gmail synchronization.</div><div class="card"><strong>Product promise</strong>Show the evidence, attribution, and uncertainty behind every metric.</div></div>
+<nav aria-label="Plan contents"><ol>
+<li><a href="#baseline">Current capabilities</a></li><li><a href="#gap">Gaps and opportunity</a></li><li><a href="#semantics">Statuses and metric definitions</a></li><li><a href="#detail">Conversation detail experience</a></li><li><a href="#opens">Repeat opens, IPs, and fingerprints</a></li><li><a href="#links">Link tracking</a></li><li><a href="#documents">PDF and image tracking</a></li><li><a href="#gmail">Gmail replies, bounces, and spam</a></li><li><a href="#conversions">Conversion attribution</a></li><li><a href="#architecture">Architecture and data model</a></li><li><a href="#api">API and repository changes</a></li><li><a href="#code">Go and JavaScript examples</a></li><li><a href="#delivery">Implementation phases</a></li><li><a href="#validation">Validation and rollout</a></li><li><a href="#operations">Privacy, security, and operations</a></li><li><a href="#decisions">Decisions and first sprint</a></li><li><a href="#sources">Sources and evidence</a></li></ol></nav>
+
+<section id="baseline"><h2>1. What we can handle today</h2>
+<p>The foundation is Go/Fiber, PostgreSQL, a Next.js dashboard, Better Auth, and an Apps Script Gmail add-on. A Caddy edge service provides one public origin and routes requests to the private dashboard and API. Keep this architecture; richer analytics does not require replacing Go or introducing a separate analytics platform immediately.</p>
+<div class="table-wrap"><table><thead><tr><th>Capability</th><th>Current behavior</th><th>Practical limit</th></tr></thead><tbody>
+<tr><td>Gmail connection</td><td>Multiple connected mailboxes under one owner; encrypted refresh tokens; dashboard sending through Gmail.</td><td>The connection requests send access, not ongoing inbox reading. It does not automatically discover replies, bounces, or recipient folder placement.</td></tr>
+<tr><td>Dashboard composer</td><td>HTML/plain-text mail, native attachments, shared delivery or separate sends per To recipient, Gmail/RFC identifiers, outgoing reply actions.</td><td>Separate mode supports individual delivery attribution; shared mode has one tracking identity for the group. Sending success means Gmail accepted the send.</td></tr>
+<tr><td>Send handling</td><td>Pending, sent, failed, and unknown; request idempotency; bounded asynchronous workers.</td><td>The workers are not a durable queue. Interrupted pending sends become unknown. Never auto-retry an ambiguous send.</td></tr>
+<tr><td>Gmail add-on</td><td>One-time pairing; verified Google identity; inserts a tracking image into a draft.</td><td>The record stays prepared because the add-on cannot confirm Send. It does not yet rewrite links or identify an incoming reply.</td></tr>
+<tr><td>Open detection</td><td>Random per-delivery pixel token, stored as a hash; image-request events; owner activity stream.</td><td>Only requests separated by more than five minutes are recorded, capped at 1,000 per delivery. No IP, user agent, or automation classification is stored.</td></tr>
+<tr><td>Conversation page</td><td>Already exists at <code>/conversations/[id]</code>: recipients, send state, Gmail ID, reply actions, and image-request timeline.</td><td>Latest 100 events only; no summary cards, link/document metrics, full incoming thread, outcome reporting, or event pagination.</td></tr>
+<tr><td>Conversation list</td><td>Mailbox filter, open-detected indicator, list and live updates.</td><td>Latest 200 conversations without pagination. Conversation-detail polling currently stops once sending ends; add activity-driven detail invalidation.</td></tr>
+<tr><td>Attachments</td><td>Files are stored for composing and sent as normal MIME attachments.</td><td>Composer files are deleted after successful sending. Durable tracked documents need a separate storage lifecycle.</td></tr>
+</tbody></table></div>
+<p>Repository evidence: <code>docs/architecture.md</code>; <code>apps/api/internal/tracking/adapters/postgres.go</code>; <code>apps/api/internal/httpapi/tracking.go</code>; <code>apps/dashboard/src/app/conversations/[id]/page.tsx</code>; and the correspondence, Gmail, add-on, and migration modules.</p>
+</section>
+
+<section id="gap"><h2>2. Shortcomings against mature trackers—and what we can offer</h2>
+<p>Mature trackers commonly provide open summaries, link metrics, document engagement, reminders, CRM outcomes, exports, and filters for automated activity. Their pixels still face the same privacy and caching limits. We should compete through useful workflows, transparent evidence, and ownership of data rather than claiming perfect read receipts.</p>
+<div class="table-wrap"><table><thead><tr><th>Feature</th><th>Our gap</th><th>Proposed offering</th><th>Priority</th></tr></thead><tbody>
+<tr><td>Conversation intelligence</td><td>Basic delivery/event page.</td><td>Per-delivery cards, timeline, links, documents, reply latency, outcomes, filters, and drill-down.</td><td>P0</td></tr>
+<tr><td>Repeat activity</td><td>Five-minute suppression hides reloads.</td><td>Bounded raw requests plus deduplicated activity sessions, first/last activity, evidence flags.</td><td>P0</td></tr>
+<tr><td>Link clicks</td><td>No tracked redirects.</td><td>Per-link/per-delivery tracking, total requests, estimated sessions, automation labels.</td><td>P0</td></tr>
+<tr><td>Document engagement</td><td>Native attachments only.</td><td>Hosted PDF/image viewer: page visibility, active time, revisit sessions, download requests.</td><td>P1</td></tr>
+<tr><td>Replies and bounces</td><td>No inbox synchronization.</td><td>Optional Gmail read connection, matched replies, first reply time, parsed delivery failure reports.</td><td>P1</td></tr>
+<tr><td>Conversions</td><td>No goal or outcome model.</td><td>Manual qualified/won outcomes and authenticated booking/form/purchase webhooks.</td><td>P1</td></tr>
+<tr><td>Reporting</td><td>No cohorts or exports.</td><td>Mailbox, campaign, date and recipient reports; reproducible rate definitions; CSV export.</td><td>P1/P2</td></tr>
+<tr><td>Inbox placement</td><td>No recipient mailbox access.</td><td>Controlled seed inbox tests and domain-health checks, explicitly sample-based.</td><td>P2</td></tr>
+<tr><td>Sales workflows</td><td>No reminders/sequences or CRM.</td><td>Follow-up reminders first; CRM/webhook integrations later. Automated sequences require scheduling, consent, unsubscribe and provider-limit work.</td><td>P2</td></tr>
+</tbody></table></div>
+<p>Our differentiators can be self-hosting, one place for Gmail activity and document outcomes, per-recipient delivery tracking, explicit proxy/bot evidence, and a timeline users can audit. Begin with one-owner workflows; team roles and organization tenancy are a separate expansion.</p>
+</section>
+
+<section id="semantics"><h2>3. Define statuses and metrics before building charts</h2>
+<p>Replace a single overloaded status with four independent dimensions. A message can be sent, have unknown delivery placement, show proxy image activity, and later produce a verified conversion.</p>
+<ul><li><strong>Sending:</strong> prepared, pending, accepted-by-Gmail, failed, unknown. Preserve existing API states for compatibility and explain their meaning in the UI.</li><li><strong>Delivery evidence:</strong> unknown, bounce-reported, or delivery-report-received where genuine evidence exists. Do not turn “no bounce” into “delivered.”</li><li><strong>Engagement:</strong> image activity, link activity, document activity, reply detected. These can coexist; no activity means no activity detected.</li><li><strong>Outcome:</strong> none, manual goal recorded, webhook goal recorded, reversed/refunded. A manual mark is not a provider-verified outcome.</li></ul>
+<div class="table-wrap"><table><thead><tr><th>Metric</th><th>Definition</th><th>Label / caveat</th></tr></thead><tbody>
+<tr><td>Image requests</td><td>Accepted pixel fetches after token validation, bounded by retention and rate limits; count suppressed requests separately where possible.</td><td>A network request, not proof of a human reading.</td></tr>
+<tr><td>Detected open sessions</td><td>Deduplicated eligible image activity under a versioned five-minute session rule; classify suspected proxies/automation separately.</td><td>Estimate. The same human may generate zero, one, or several requests.</td></tr>
+<tr><td>Open detection rate</td><td>Distinct confirmed-sent eligible deliveries with eligible image activity ÷ confirmed-sent eligible deliveries.</td><td>Show sample counts, cutoff, rule version, and excluded automation/unknowns.</td></tr>
+<tr><td>Click rate</td><td>Distinct confirmed-sent deliveries with an eligible click ÷ confirmed-sent deliveries that contained tracked links.</td><td>Separate raw requests from likely browser sessions; identity remains attributed to a delivery.</td></tr>
+<tr><td>Document engagement rate</td><td>Sent deliveries with a successful viewer session ÷ sent deliveries containing a tracked document share.</td><td>Native attachment opens are outside this denominator.</td></tr>
+<tr><td>Reply rate</td><td>Eligible confirmed-sent deliveries with a matched recipient reply ÷ eligible confirmed-sent deliveries.</td><td>Exclude sender replies, known auto-replies and bounces. Shared deliveries use a group denominator.</td></tr>
+<tr><td>Conversion rate</td><td>Distinct eligible confirmed-sent deliveries with the selected goal inside the attribution window ÷ eligible confirmed-sent deliveries.</td><td>One qualifying conversion per delivery for the rate. Count orders/revenue separately.</td></tr>
+<tr><td>Time to first activity / reply</td><td>First qualifying server event minus confirmed send time, only when both timestamps exist.</td><td>Proxy open time is not time to read. Never substitute updated_at for historical sent_at.</td></tr>
+<tr><td>Click-to-open ratio</td><td>Eligible clicked deliveries ÷ image-active deliveries, using an explicitly documented cohort.</td><td>Secondary and potentially misleading: clicks can exist without an image load. Not the primary conversion KPI.</td></tr>
+</tbody></table></div>
+<div class="note"><strong>Example:</strong> 100 confirmed sends, 40 with detected image activity, 12 with eligible clicks, and 3 bookings gives 40% open detection and 3% booking conversion. If only 60 sends contained tracked links, click rate is 12/60 = 20%. Display numerator and denominator beside each percentage.</div>
+<p>Prepared add-on drafts, failed sends and unknown sends are excluded from sent-based rates until reconciled. Group-mode sends count as deliveries, not as individually observed recipients. Report prepared drafts in a separate activity cohort. Empty denominators display “Not enough data.” Store timestamps in UTC and render in the chosen reporting timezone. Cohorts use send date; events use explicit observation windows.</p>
+</section>
+
+<section id="detail"><h2>4. The conversation detail page we should build</h2>
+<p>Enhance the existing route instead of creating a disconnected analytics destination. First make each send attempt useful; later introduce a real thread model and group related attempts by mailbox plus Gmail thread ID.</p>
+<div class="diagram" aria-label="Proposed conversation page layout">Conversation subject · mailbox · recipient/group · send time
+Sending: Accepted by Gmail    Delivery placement: Unknown
+
+Image activity     Link activity      Documents       Reply / outcome
+First / last       Eligible / raw     Sessions/time   Reply latency / goal
+
+Overview | Timeline | Links | Documents | Messages | Diagnostics
+
+Recipient/delivery selector   Date range   Include suspected automation
+Timeline: send → image request → link request → document view → reply → booking
+Every event: time · type · delivery · source · evidence flags</div>
+<ul><li><strong>Overview:</strong> first/last activity, estimated open sessions, clicks, document visits, matched replies, selected goal and its evidence source.</li><li><strong>Timeline:</strong> cursor pagination; type/source filters; distinct styling for observed actions and inferred sessions; expandable diagnostics.</li><li><strong>Links:</strong> destination label, per-delivery counts, last click, estimated sessions, bot/proxy exclusions. Hide sensitive URL query parameters by default.</li><li><strong>Documents:</strong> document version, page coverage, active foreground time, revisits and download requests.</li><li><strong>Messages:</strong> initially our outgoing send metadata; full outgoing/incoming thread only when optional read sync is connected.</li><li><strong>Diagnostics:</strong> prepared versus confirmed sent, shared attribution, pixel limits, instrumentation version, sync health and missing evidence.</li></ul>
+<p>Always show useful empty states: “No image activity detected; images may be blocked,” “Link tracking was not enabled for this send,” or “Reconnect Gmail with read access to detect replies.” A missing feature must not appear as zero engagement. Add owner-scoped SSE invalidation for detail queries, refetch on reconnect, and visible last-updated state. Keep polling as a bounded fallback.</p>
+</section>
+
+<section id="opens"><h2>5. Repeat opens, IP addresses, user agents, and FingerprintJS</h2>
+<h3>Can a second open generate a second request?</h3>
+<p>Yes—when the mail client actually fetches the image again. Log those requests and show repeated detected activity. But caching may reuse the image without contacting us; background/privacy fetches may contact us before a person opens the message. Cache-control headers help at our endpoint but cannot force every mail client or proxy to refetch.</p>
+<p>Gmail protects image loading from exposing the recipient's computer/location; Apple Mail Privacy Protection can hide IPs and download remote content in the background. Therefore repeat requests cannot establish “read exactly twice,” and absence of a second request cannot establish “opened only once.” <a href="https://support.google.com/mail/answer/145919?hl=en" rel="noopener noreferrer">Gmail image behavior</a>; <a href="https://support.apple.com/en-lb/guide/mail/mlhl03be2866/mac" rel="noopener noreferrer">Apple privacy behavior</a>.</p>
+<h3>What to implement</h3>
+<ol><li>Separate raw bounded request observation from session aggregation. Remove the current five-minute suppression from the source-event layer; retain a versioned session rule in analytics. Keep quotas, coalesced counters and overflow markers to prevent abuse.</li><li>Capture server receive time, delivery ID, event type, source, request method, parsed browser family where useful, and evidence flags. Treat provider-image proxies as proxy observations, not identifiable devices.</li><li>Resolve IP only through a verified proxy chain. Test Railway → Caddy → Go forwarding; the API remains private and Caddy must overwrite/normalize client-controlled forwarded headers. Do not trust the leftmost X-Forwarded-For blindly.</li><li>Default to minimized network data: short-lived diagnostic raw IP only if enabled; otherwise keyed HMAC/truncated network information with a documented retention window. Pseudonymous hashes are still sensitive and are not a person ID.</li><li>Use flags such as known-image-proxy, suspected-link-scanner, owner-preview, unknown-source and unclassified. Store classifier version/reasons. Do not invent a percentage probability that someone read the email.</li></ol>
+<p>IP plus user agent is a weak grouping signal: shared networks, VPNs, mobile network changes and identical browsers cause collisions and splits. Country/ASN lookup can offer approximate network context for direct browser visits; do not present precise location, identity, or reliable Gmail recipient location.</p>
+<h3>Where FingerprintJS fits</h3>
+<p>Ordinary email bodies cannot run the browser JavaScript needed by FingerprintJS. It can run on our hosted document viewer or a landing page we control. Prefer first-party sessions first. If an opt-in experiment later uses <code>@fingerprintjs/fingerprintjs</code>, pin and review the package, pseudonymize its visitor ID, restrict collection to the viewer, and label the result “estimated browser.” Never use it for access control or claim it identifies a person. The project itself documents spoofability and accuracy limitations. <a href="https://github.com/fingerprintjs/fingerprintjs" rel="noopener noreferrer">FingerprintJS repository</a>.</p>
+</section>
+
+<section id="links"><h2>6. Track clicked links</h2>
+<p>For dashboard sends, parse sanitized HTML using an HTML parser. Rewrite eligible HTTP/HTTPS anchors into <code>/c/{opaqueToken}</code>, with a distinct token per delivery and logical link. Persist the validated destination before sending. Keep mailto/tel, unsubscribe/preferences links, existing tracked URLs, and signed or one-time links out unless explicitly supported. Plain-text alternatives should use the corresponding tracked URLs too.</p>
+<ol><li>The composer offers “Track links,” shows which destinations will change, and lets the sender exclude individual links.</li><li>The send preparation transaction creates link records and token hashes. Reuse these records on idempotent retry; never generate a second set for the same attempt.</li><li>The public redirect resolves the token to a stored destination, checks active/expiry state, records a bounded observation, and issues a non-cacheable 302.</li><li>The destination receives no recipient email or raw delivery ID. The capability URL identifies the delivery server-side.</li><li>Distinguish raw GET requests, suspected scanners, and estimated click sessions. HEAD requests do not count as clicks. Browser user agents alone do not prove human activity.</li></ol>
+<p>Use stored destinations rather than an arbitrary <code>?url=</code> redirect. Restrict schemes and reject credentials/control characters. The redirect never needs to fetch the destination, avoiding SSRF through preview fetching. Disabling tracking should stop logging while preserving navigation for legitimate old emails where safe; explicit document revocation is a separate access action.</p>
+<p>Gmail add-on phase one: generate a tracked link the user inserts manually. Phase two: investigate compose APIs and draft-body permissions in a focused spike before promising automatic rewriting. The current insert-pixel action does not provide a full draft rewrite pipeline. Show “Links not instrumented” on these messages until supported.</p>
+<p>Security tools can follow links automatically; filters reduce noise but cannot eliminate it. <a href="https://mailchimp.com/help/about-bot-activity/" rel="noopener noreferrer">Mailchimp bot-activity guidance</a>.</p>
+</section>
+
+<section id="documents"><h2>7. Track PDFs and images through hosted shares</h2>
+<p>A native PDF/image attachment can be downloaded, cached, opened offline, or forwarded without any request to us. We cannot reliably measure those opens. Offer an explicit “Send as tracked document link” option alongside normal attachments.</p>
+<h3>Storage and access</h3>
+<ul><li>Create a durable document library with immutable file versions, owner ID, object key, checksum, MIME type, size, page count and status. Do not reuse disposable composer-file cleanup.</li><li>Use an S3-compatible private bucket for hosted documents; a separate persistent volume is acceptable for an initial single-replica pilot. Add object deletion jobs, backup/restore and quotas.</li><li>Create per-delivery shares with high-entropy hashed tokens, expiry, revocation and download policy. A share URL grants access; forwarding also forwards access unless recipient authentication is enabled.</li><li>Exchange the URL capability for a short-lived viewer session and redirect to a clean URL. Use HttpOnly/Secure session cookies, restrictive referrer policy and no third-party viewer analytics.</li><li>Offer optional verified-email access when recipient identity matters. This adds friction and requires a matching recipient policy; a browser fingerprint is not authentication.</li></ul>
+<h3>PDF and image viewer</h3>
+<p>Use a self-hosted <a href="https://mozilla.github.io/pdf.js/" rel="noopener noreferrer">PDF.js</a> integration for PDFs and a controlled image viewer for supported image formats. Record viewer_loaded only after rendering succeeds. Record page exposure when at least 50% of a page is visible for a defined interval, and foreground activity in bounded ten-second heartbeats. Pause when hidden or idle. Define page coverage as qualifying distinct pages divided by document page count.</p>
+<p>Show viewer sessions, revisits, pages exposed, approximate active time, download requests, and optional verified identity. Do not call scroll coverage “read completion.” A successful file response or Range fetch is not a new view. Download clicks indicate a request, not confirmed saving or later offline reading. Image zoom/pan can be optional interaction metrics without claiming visual attention.</p>
+<p>Reject HTML/SVG or serve unsafe formats only as downloads from an isolated origin; allowlist MIME/signature combinations, scan uploads, limit file/page sizes, patch the renderer, and use a restrictive CSP. Prevent one document's JavaScript or embedded actions from reaching the dashboard session. No native-PDF beacon tricks.</p>
+</section>
+
+<section id="gmail"><h2>8. Gmail state, reply detection, bounces, and spam</h2>
+<h3>Useful Gmail/account state</h3>
+<p>Settings should show connected, needs reconnect, token refresh failed, add-on paired, read sync enabled, last successful sync, and sync delayed/error. Do not mistake a missing event for a disconnected mailbox. Send state and Gmail account health belong in different UI components.</p>
+<h3>Optional read synchronization</h3>
+<p>Keep send-only mode usable. Add a separately enabled “Sync replies and delivery reports” feature that requests the minimum verified scope for the selected work. Header/label-only workflows may use gmail.metadata; parsing bounce content or rendering message bodies requires broader read access. Both metadata and readonly are restricted scopes, and public server-side processing introduces Google verification/security-assessment requirements. Validate the intended deployment category before shipping broadly. <a href="https://developers.google.com/workspace/gmail/api/auth/scopes?hl=en" rel="noopener noreferrer">Google scope reference</a>.</p>
+<ol><li>Store granted scopes and capability state per mailbox. Reconnect only when the user enables features requiring more access.</li><li>Start with durable scheduled incremental polling and a saved Gmail history cursor. Limit initial sync to relevant threads/time windows; handle expired history cursors with a bounded full resync.</li><li>Correlate using mailbox + Gmail thread ID, RFC Message-ID, In-Reply-To and References. Thread membership alone is insufficient for individual recipient attribution.</li><li>Exclude outgoing/self mail, recognized auto-replies and bounce reports from human reply counts. Preserve ambiguous attribution for shared sends.</li><li>Parse genuine DSN/bounce reports conservatively: recipient, action, diagnostic/status and referenced message. Record bounce-reported, not invented deliverability.</li><li>Later add Gmail watch → Cloud Pub/Sub → authenticated push endpoint. Renew watches on a schedule and retain polling reconciliation; notifications trigger history fetches rather than containing full messages.</li></ol>
+<p>For add-on sends, “prepared” remains the truth until a reliable Sent match exists. A scope-limited spike must prove how to correlate a prepared draft with its sent message using a supported draft identifier or narrowly scoped body matching. Subject/recipient/time similarity alone is ambiguous; it must not silently mark sent. If matching is unavailable, retain prepared and exclude from sent-rate denominators.</p>
+<p>Introduce <code>threads</code> and <code>messages</code> as separate entities. Existing conversation IDs represent send attempts; preserve their URLs and optionally add a thread view grouping multiple attempts plus incoming messages. Do not merge unrelated historical sends just because subjects match.</p>
+<h3>Can we tell whether a recipient got the email in spam?</h3>
+<p>Not for arbitrary recipients through our sending Gmail account or tracking pixel. The sender's SPAM label concerns the sender's mailbox, not the recipient's placement. A missing open cannot diagnose spam.</p>
+<p>A later seed-testing feature can send to controlled test inboxes and inspect their labels/folders. Report “seed inbox placement” by provider, with sample size and time—not the actual customer's folder. Add SPF/DKIM/DMARC checks and, where authorized and available, aggregate Google Postmaster domain signals. These are diagnostic context, not per-message guarantees.</p>
+<p><a href="https://developers.google.com/workspace/gmail/api/guides/sync" rel="noopener noreferrer">Gmail sync guide</a> · <a href="https://developers.google.com/workspace/gmail/api/guides/push" rel="noopener noreferrer">Gmail push guide</a> · <a href="https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send" rel="noopener noreferrer">Gmail send API</a>.</p>
+</section>
+
+<section id="conversions"><h2>9. Conversion rate that means something</h2>
+<p>Define goals such as reply received, meeting booked, form submitted, qualified lead, purchase, or manually marked won. Use server-confirmed outcomes for bookings/purchases whenever possible. A landing-page visit is engagement, not automatically a conversion.</p>
+<ol><li>Create a goal with a stable ID, event name, default attribution window (proposed: 30 days), and value/currency policy.</li><li>On a tracked destination we control, carry an opaque attribution reference into a first-party session. Cross-domain destinations need an explicit integration; a redirect alone cannot observe their purchases.</li><li>Record events through authenticated server webhooks: signature verification over the original body, timestamp/replay checks, size limits, idempotent external event IDs and tenant/owner binding.</li><li>Keep manual outcomes separate, including actor, recorded time and an audit trail. Support reversals/refunds without erasing original evidence.</li><li>For MVP, choose the last eligible tracked click before the conversion within the goal window. Store the attribution policy and matched evidence; require timestamps that precede the conversion.</li><li>Keep unattributed conversions rather than forcing matches by email or IP. Shared and forwarded links retain “attributed delivery,” not proven clicker identity.</li></ol>
+<p>Show goal conversion rate over eligible sent deliveries, plus a separate click-to-conversion rate over eligible clicked deliveries. Deduplicate orders by provider event/order identity; don't sum mixed currencies without explicit conversion rules. Freeze or version report policies so changing the window/filter does not silently rewrite historical results.</p>
+</section>
+
+<section id="architecture"><h2>10. Architecture and data model</h2>
+<div class="diagram">Dashboard / Gmail add-on
+  → Go API: send preparation, tracking tokens, document shares, goals
+  → PostgreSQL: transactional events, summaries, outbox, jobs
+
+Public edge routes:
+  /p/* → pixel observation
+  /c/* → stored-destination redirect observation
+  /d/* → hosted viewer (Next.js)
+  /api/v1/viewer/* → session-scoped telemetry and file access (Go)
+  /api/v1/webhooks/* → signed integrations and Gmail push (Go)
+
+Durable worker → aggregate events / Gmail sync / cleanup / retryable jobs
+Private object storage → document versions
+Owner-scoped notifications → dashboard query invalidation</div>
+<p>Keep ingestion, classification and aggregation separate. Accept observations quickly; apply versioned classifiers and summaries asynchronously through a PostgreSQL outbox. Start with PostgreSQL indexes and jobs, not Kafka or a second analytics database. Use rollups/partitioning only after measured query/retention volume requires them.</p>
+<div class="table-wrap"><table><thead><tr><th>Entity</th><th>Proposed fields / constraints</th></tr></thead><tbody>
+<tr><td>deliveries additions</td><td>source, confirmed_sent_at nullable, instrumentation_version, tracking_config, provider reconciliation evidence. Preserve current send states.</td></tr>
+<tr><td>activity_events</td><td>id, owner_id, delivery_id, kind, received_at server UTC, occurred_at untrusted-client optional, link/share/message IDs, session_id optional, flags, classifier_version, bounded metadata, dedupe_key optional. Index delivery/time/id and owner/time/id.</td></tr>
+<tr><td>tracked_links</td><td>id, owner_id, delivery_id, logical_link_id, validated destination, label, unique token_hash, created_at, expires_at, logging_enabled. Immutable destination per issued token.</td></tr>
+<tr><td>documents / versions / shares</td><td>Owner-bound documents, immutable version + object key/hash/type/size/page count; per-delivery share token hash, expiry, revoked_at, download/identity policy.</td></tr>
+<tr><td>viewer_sessions</td><td>Share-bound session, expiry, optional verified recipient, first/last activity; unique telemetry batch IDs; no client-authoritative owner or delivery selection.</td></tr>
+<tr><td>activity_summaries</td><td>Per-delivery raw/eligible counts, first/last timestamps, sessions, document activity, classifier version and computed_at. Rebuildable from retained events.</td></tr>
+<tr><td>threads / messages / sync_state</td><td>Unique mailbox+Gmail thread/message IDs, direction, headers and selected bodies only when enabled, delivery association, history cursor, watch expiry, last success/error.</td></tr>
+<tr><td>goals / conversions</td><td>Owner, goal, external source/event ID unique per integration, event time, value/currency, evidence type, reversal linkage, attribution match/policy/window.</td></tr>
+<tr><td>jobs / outbox</td><td>Lease, run_at, attempts, bounded errors and dedupe key. Use FOR UPDATE SKIP LOCKED with expiring leases and retry policy.</td></tr>
+</tbody></table></div>
+<p>Enforce owner relationships with composite foreign keys or equivalent transactional checks, including nested document/link reads. Use one source of truth for confirmed send counts and summary definitions. Do not calculate lifetime totals from the latest timeline page.</p>
+<h3>Migration strategy</h3>
+<p>Add numbered migrations after the existing four. Use expand → backfill → switch reads → retire, keeping current endpoints compatible. Import old open_events as <code>legacy_image_activity</code> with no fabricated IP/UA, raw-request count, exact send timestamp or historical bot classification. Existing counts are deduplicated and capped; expose that limitation. Continue using the shared startup migration lock; move large backfills into resumable jobs to avoid lengthy deployment downtime. Snapshot database and volumes before switching.</p>
+</section>
+
+<section id="api"><h2>11. API contracts and code locations</h2>
+<p>Update <code>packages/api-contract/openapi.yaml</code> first, regenerate Go and TypeScript clients, then implement domain/application/adapters and UI. Endpoint names below are proposed under the current <code>/api/v1</code> prefix.</p>
+<div class="table-wrap"><table><thead><tr><th>Endpoint</th><th>Purpose / authorization</th></tr></thead><tbody>
+<tr><td>GET /conversations/{id}/analytics</td><td>Owner-scoped summaries with numerator/denominator, evidence labels, coverage, policy version and as-of time.</td></tr>
+<tr><td>GET /conversations/{id}/events?cursor=&amp;kind=</td><td>Owner-scoped keyset pagination by time+ID; opaque cursor tied to filter/cohort.</td></tr>
+<tr><td>GET /conversations?cursor=&amp;mailboxId=</td><td>Paginated list replacing the fixed 200-record ceiling.</td></tr>
+<tr><td>POST /documents; POST /documents/{id}/shares</td><td>Owner upload/create share with MIME/size validation, durable version and policy.</td></tr>
+<tr><td>POST /viewer/sessions; POST /viewer/events</td><td>Capability exchange and session-bound validated telemetry; not owner JWT endpoints.</td></tr>
+<tr><td>GET /viewer/file</td><td>Session-authorized byte/Range response; does not count each request as a view.</td></tr>
+<tr><td>POST /goals; POST /conversations/{id}/outcomes</td><td>Owner goal setup and audited manual outcome changes.</td></tr>
+<tr><td>POST /webhooks/conversions/{integration}; POST /webhooks/google</td><td>Provider-authenticated ingress, replay resistance, idempotency, bounded payloads.</td></tr>
+<tr><td>GET /reports; GET /reports/export</td><td>Owner cohort reports with consistent metric definitions; async export if large.</td></tr>
+</tbody></table></div>
+<ul><li><code>apps/api/internal/tracking</code>: event recording, tokens, classifiers, summaries, analytics query ports.</li><li><code>apps/api/internal/correspondence</code>: sanitized link rewriting, durable send preparation, reconciliation hooks.</li><li><code>apps/api/internal/mailboxes</code>: granted scopes, sync capability and Gmail health; add Gmail history/message adapters.</li><li>New <code>documents</code> and <code>outcomes</code> domains: isolate storage/viewer policy and goal attribution from pixel logic.</li><li><code>apps/api/internal/httpapi</code>: public redirect/pixel routes, viewer authorization, owner endpoints and signed webhook handlers.</li><li><code>apps/dashboard/src/app/conversations/[id]/page.tsx</code>: analytics tabs and timeline; new document library/viewer and reporting routes.</li><li><code>apps/gmail-addon</code>: tracking options, manual tracked-link insert, accurate prepared status and friendly recoverable errors.</li><li>Edge configuration: explicitly route <code>/c/*</code> to Go and keep <code>/d/*</code> on Next.js; retain existing pixel/API/OAuth routes.</li></ul>
+</section>
+
+<section id="code"><h2>12. Go and JavaScript implementation examples</h2>
+<p>These examples explain the design; they are illustrative, not complete production patches. Interfaces, migrations, configuration, authorization and integration tests must be implemented together.</p>
+<details open><summary>Go: redirect observation without accepting arbitrary destinations</summary>
+<pre><code>package trackinghttp
+
+import (
+    "context"
+    "crypto/sha256"
+    "encoding/base64"
+    "net/url"
+    "time"
+
+    "github.com/gofiber/fiber/v3"
+)
+
+type Link struct {
+    ID, DeliveryID, Destination string
+    LoggingEnabled bool
+}
+type Links interface {
+    ResolveActive(context.Context, []byte) (Link, error)
+    RecordRequest(context.Context, Link, time.Time) error
+}
+
+func Redirect(repo Links) fiber.Handler {
+    return func(c fiber.Ctx) error {
+        raw, err := base64.RawURLEncoding.DecodeString(c.Params("token"))
+        if err != nil || len(raw) != 32 {
+            return c.SendStatus(fiber.StatusNotFound)
+        }
+        hash := sha256.Sum256(raw)
+        ctx, cancel := context.WithTimeout(c.Context(), time.Second)
+        defer cancel()
+        link, err := repo.ResolveActive(ctx, hash[:])
+        if err != nil { // Production: distinguish not-found from DB outage.
+            return c.SendStatus(fiber.StatusNotFound)
+        }
+        dest, err := url.Parse(link.Destination)
+        if err != nil || dest.Hostname() == "" || dest.User != nil ||
+            (dest.Scheme != "https" &amp;&amp; dest.Scheme != "http") {
+            return c.SendStatus(fiber.StatusGone)
+        }
+        if c.Method() == fiber.MethodGet &amp;&amp; link.LoggingEnabled {
+            // Atomic bounded insert + outbox. Instrument failures;
+            // a logging failure should not prevent valid navigation.
+            _ = repo.RecordRequest(ctx, link, time.Now().UTC())
+        }
+        c.Set("Cache-Control", "no-store")
+        c.Set("Referrer-Policy", "no-referrer")
+        return c.Redirect().Status(fiber.StatusFound).To(dest.String())
+    }
+}</code></pre>
+<p>Generate 32 random bytes with crypto/rand; store only their SHA-256 hash. ResolveActive validates expiry/owner relationships server-side. Add method restrictions, quotas, trusted-proxy metadata and error counters in the real handler. Redact capability tokens from edge/access logs.</p></details>
+<details open><summary>SQL: conversion rate counts deliveries rather than orders</summary>
+<pre><code>WITH eligible AS (
+  SELECT id, confirmed_sent_at
+  FROM deliveries
+  WHERE owner_id = $1                 -- proposed owner-bound schema
+    AND confirmed_sent_at &gt;= $2
+    AND confirmed_sent_at &lt; $3
+    AND source &lt;&gt; 'test'
+), converted AS (
+  SELECT DISTINCT a.delivery_id
+  FROM conversion_attributions a
+  JOIN conversions c ON c.id = a.conversion_id
+  JOIN eligible e ON e.id = a.delivery_id
+  WHERE c.owner_id = $1 AND c.goal_id = $4
+    AND c.reversed_at IS NULL
+    AND c.occurred_at &gt;= e.confirmed_sent_at
+    AND c.occurred_at &lt;= e.confirmed_sent_at + $5::interval
+    AND c.occurred_at &lt;= $6             -- explicit report cutoff
+    AND a.policy_version = $7
+)
+SELECT count(*) AS eligible_deliveries,
+       count(*) FILTER (WHERE c.delivery_id IS NOT NULL) AS converted,
+       100.0 * count(*) FILTER (WHERE c.delivery_id IS NOT NULL)
+         / NULLIF(count(*), 0) AS conversion_rate
+FROM eligible e LEFT JOIN converted c ON c.delivery_id = e.id;</code></pre>
+<p>The attribution table stores the selected eligible click and policy. Bound goal window values in the API. This query targets the proposed model; the existing deliveries table does not have all these fields.</p></details>
+<details open><summary>JavaScript: bounded foreground telemetry in our hosted viewer</summary>
+<pre><code>// Viewer session already established in a Secure, HttpOnly cookie.
+// The bootstrap endpoint returns a session-bound CSRF value.
+export function startViewerTelemetry(csrf, getVisiblePages) {
+  let last = performance.now();
+  let lastInput = last;
+  let activeMs = 0;
+  const touch = () =&gt; { lastInput = performance.now(); };
+  const inputs = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+  inputs.forEach(name =&gt; window.addEventListener(name, touch, {passive:true}));
+
+  const timer = setInterval(() =&gt; {
+    const now = performance.now();
+    const elapsed = Math.min(now - last, 1500);
+    last = now;
+    if (document.visibilityState !== 'visible' || now - lastInput &gt; 30000) {
+      return;
+    }
+    activeMs += elapsed;
+    if (activeMs &lt; 10000) return;
+    const payload = {
+      batchId: crypto.randomUUID(),
+      kind: 'viewer_activity',
+      activeMs: Math.round(activeMs),
+      pages: getVisiblePages() // IntersectionObserver-derived page numbers
+    };
+    activeMs = 0;
+    void fetch('/api/v1/viewer/events', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token':csrf},
+      body: JSON.stringify(payload)
+    }).catch(() =&gt; {}); // Best effort; no invented time after failed delivery.
+  }, 1000);
+
+  return () =&gt; {
+    clearInterval(timer);
+    inputs.forEach(name =&gt; window.removeEventListener(name, touch));
+  };
+}</code></pre>
+<p>The server derives share/delivery/owner from the session, validates Origin/CSRF, caps activeMs per batch and session wall time, validates page bounds and deduplicates batchId. Client telemetry is forgeable: present approximate active time. This code runs in our browser viewer, never inside Gmail. Add page-exposure thresholds and rendering-success events separately.</p></details>
+</section>
+
+<section id="delivery"><h2>13. Implementation phases and acceptance criteria</h2>
+<p>Suggested complete scope: approximately 12–18 engineering weeks, plus external OAuth verification or integration approval time. These are planning ranges, not delivery commitments. Gmail synchronization and document work can be scheduled independently after the foundation.</p>
+<div class="phase"><h3>Phase 0 · Foundation and evidence contract · 1–2 weeks</h3><p><strong>Build:</strong> event taxonomy, metric definitions, confirmed-send timestamps, instrumentation version, additive migrations, legacy import, token-log redaction, proxy-chain validation, rate limits, outbox/jobs, pagination design and observability.</p><p><strong>Acceptance:</strong> legacy timeline remains accessible; no fabricated history; raw vs deduplicated data is identifiable; duplicate jobs/events are idempotent; crash/restart drains committed outbox; spoofed forwarded headers cannot become trusted recipient IPs.</p></div>
+<div class="phase"><h3>Phase 1 · Conversation analytics and repeat activity · 1–2 weeks</h3><p><strong>Build:</strong> summary/event APIs, keyset pagination, basic classifier flags, first/last activity, estimated sessions, delivery selector, overview/timeline/diagnostics UI and detail SSE invalidation.</p><p><strong>Acceptance:</strong> totals are independent of timeline page size; prepared/failed/unknown are excluded from sent metrics; shared attribution is explicit; proxy events remain visible but distinguished; empty denominators and unavailable instrumentation do not show misleading zeroes.</p></div>
+<div class="phase"><h3>Phase 2 · Dashboard link tracking · 1–2 weeks</h3><p><strong>Build:</strong> anchor rewriting, plain-text parity, per-delivery link tokens, redirect handler, edge routing, per-link analytics, exclusions and manual add-on link insertion.</p><p><strong>Acceptance:</strong> separate deliveries have distinct tokens; shared mode stays aggregate; query strings/fragments and signed-link exclusions work; HEAD/scanner observations do not inflate eligible counts; retries do not duplicate tokens; logging failures preserve valid navigation; expired/invalid destinations are safe.</p></div>
+<div class="phase"><h3>Phase 3 · Hosted PDFs and images · 2–3 weeks</h3><p><strong>Build:</strong> durable object storage, document library/versioning, per-delivery shares, clean-URL viewer sessions, PDF.js/image renderer, page visibility/active time, expiry/revocation and download policies.</p><p><strong>Acceptance:</strong> native attachments remain available; sending cleanup cannot delete library documents; Range requests do not inflate views; hidden/idle tabs stop accruing time; revoked shares fail; authenticated identity is distinct from estimated sessions; malicious/oversized files are rejected or isolated.</p></div>
+<div class="phase"><h3>Phase 4 · Manual outcomes and conversion integrations · 1–2 weeks</h3><p><strong>Build:</strong> goals, audited manual outcomes, one selected booking/form/purchase integration, signed webhook intake, deduplication, attribution windows and conversion cards.</p><p><strong>Acceptance:</strong> replayed provider events count once; unsigned/wrong-owner events fail; conversion evidence remains distinct from click telemetry; reversals are reflected; unattributed events are preserved; counts and money do not multiply through SQL joins.</p></div>
+<div class="phase"><h3>Phase 5 · Optional Gmail reply/bounce sync · 2–3 weeks plus approval time</h3><p><strong>Build:</strong> scope/capability UX, read-access reconnect, incremental polling, history-cursor recovery, message/thread entities, reply matching and bounce parsing. Add Pub/Sub/watch only after polling works.</p><p><strong>Acceptance:</strong> send-only users keep working; revoked access yields a reconnect state; duplicate/out-of-order sync notifications are harmless; self/auto-replies are excluded; shared replies remain ambiguous where necessary; prepared drafts are not falsely marked sent.</p></div>
+<div class="phase"><h3>Phase 6 · Reports, reminders and production hardening · 2–3 weeks</h3><p><strong>Build:</strong> mailbox/campaign/cohort reports, CSV export, documented metric policies, manual follow-up reminders, retention cleanup, restore drill and performance tuning. Establish SLOs from pilot measurements.</p><p><strong>Acceptance:</strong> reports reconcile with delivery drill-down; date/timezone boundaries work; deleting a conversation/document follows documented retention; exports neutralize spreadsheet formula injection; load tests and replica notification tests meet agreed targets.</p></div>
+<p><strong>Later, separately scoped:</strong> seed inbox testing, Postmaster integration, automated sequences, CRM connectors, team roles, A/B experiments, opt-in browser fingerprint study, and analytics infrastructure beyond PostgreSQL. None blocks the initial conversation/link product.</p>
+</section>
+
+<section id="validation"><h2>14. Testing, rollout, and migration verification</h2>
+<ul><li><strong>Domain tests:</strong> metric denominators, session windows, classifier rules/versioning, forwarding/shared attribution, conversion windows, reversals and reply classification.</li><li><strong>PostgreSQL integration tests:</strong> concurrent token fetches, summary consistency, idempotency, cursor boundaries, owner isolation, job lease recovery and legacy backfill.</li><li><strong>HTML/MIME tests:</strong> parser rewriting, malformed markup, duplicate/signed links, plain-text parity, preserved reply headers, individual vs shared tokens and attachments.</li><li><strong>Viewer tests:</strong> render failures, visible-page thresholds, hidden/idle time, duplicate telemetry, forged page/time fields, expired sessions, byte-range access and download policy.</li><li><strong>Webhook/sync tests:</strong> signature/replay verification, duplicate/out-of-order provider notifications, stale history cursor, OAuth revocation, quota/backoff and ambiguous sent reconciliation.</li><li><strong>Client matrix:</strong> controlled Gmail web/mobile, Apple privacy on/off, Outlook, image blocking, cached reopening, forwarded mail and security-scanned links. Measure behavior empirically rather than promising universal counts.</li></ul>
+<p>Run existing required generation/build checks: <code>pnpm generate</code>, <code>pnpm generate:go</code>, <code>pnpm typecheck</code>, <code>pnpm build</code>, and <code>cd apps/api &amp;&amp; GOTOOLCHAIN=go1.25.1 go test ./...</code>. CI must reject generated contract drift. Test database/volume restoration in a disposable environment.</p>
+<p>Roll out flags in order: new event capture in shadow mode → compare old/new summaries → conversation UI → link tracking → documents → goals → optional sync. Version classifiers and metric policies. Preserve old public tokens/routes. Use a rollback that disables new processing/UI without dropping tables or breaking links already sent. Do not remove legacy data until verification and retention policy permit it.</p>
+</section>
+
+<section id="operations"><h2>15. Privacy, security, and operational reliability</h2>
+<p>Collect only data needed for the selected feature. Proposed configurable defaults: diagnostic raw IP off, or maximum seven days when explicitly enabled; detailed activity 90 days; pseudonymous session data 90 days; rollups 12 months; hosted files retained until owner deletion or configured expiry. These are product defaults to review, not legal retention claims. Explain tracked documents/analytics to users and provide collection controls, exports and deletion.</p>
+<ul><li>Never expose Gmail refresh tokens, pairing codes, capability URLs, raw IPs or message bodies in generic logs. Store encryption secrets separately from database backups and test key-loss recovery planning.</li><li>Apply owner authorization to every dashboard object and nested resource. Public viewer access is share-scoped; document sessions must not gain dashboard privileges.</li><li>Rate-limit by token/session/network with global bounds. Record overflow counters and data-coverage warnings; never silently present a capped count as a full lifetime total.</li><li>Use structured safe error codes: pairing_code_invalid_or_used, addon_identity_mismatch, mailbox_reconnect_required, instance_unavailable. A backend/database failure must not masquerade as expired pairing. Show actionable recovery; retain diagnostics server-side.</li><li>Use a transactional outbox for notifications and summaries. The current in-memory SSE broker does not fan out across API replicas; start with one replica or introduce PostgreSQL LISTEN/NOTIFY/pub-sub invalidation with reconnect refetch.</li><li>Do not blindly turn sending into a retrying job: an uncertain Gmail response can hide a successful send. Persist attempt states, reconcile evidence and require review before repeating ambiguous sends.</li><li>Monitor ingestion latency/errors, dropped/coalesced events, summary lag, redirect availability, viewer failures, worker backlog, sync age/watch expiry, webhook rejects and object-storage costs.</li></ul>
+<p>Make the product's own follow-up reminders suppressible after reply/outcome. If automated sending is added later, implement durable scheduling, cancellation, unsubscribe handling and provider rate limits before enabling sequences.</p>
+</section>
+
+<section id="decisions"><h2>16. Recommended decisions and the first sprint</h2>
+<p>Proceed with these defaults: keep Go + Next.js + PostgreSQL; extend the existing conversation route; ship dashboard links first; use hosted document links for attachment analytics; make Gmail read sync optional; use first-party sessions before fingerprinting; report click/reply/conversion rates with explicit cohorts; and treat spam placement as a later controlled seed-test feature.</p>
+<ol><li>Write the event/status/metric contract and examples in the repository; agree on labels for raw, estimated, proxy and legacy data.</li><li>Add confirmed_sent_at, instrumentation metadata, activity events, rollup/outbox tables and a resumable legacy backfill.</li><li>Validate trusted proxy metadata and redact tokens in access logs; add bounded ingestion and failure/overflow counters.</li><li>Add analytics and paginated event contracts, regenerate clients, and implement owner-scoped queries.</li><li>Upgrade the existing detail page with summary cards, a paginated timeline, delivery selection and evidence explanations.</li><li>Run controlled reopen/cache/privacy tests and compare new summaries in shadow mode before switching the default UI.</li></ol>
+<div class="note"><strong>First usable release:</strong> a richer conversation detail page plus dashboard link tracking. It answers “what activity did we observe, when, against which delivery and link?” The next release adds hosted document engagement and goals; optional Gmail sync adds verified replies and reported bounces when permissions permit.</div>
+</section>
+
+<section id="sources"><h2>17. Sources and evidence</h2>
+<p>Current-feature claims were checked against the local repository on 4 October 2026. Provider/browser limitations and integration design were checked against the primary sources below. Implementation proposals and estimates are engineering judgments, not provider guarantees.</p>
+<ol><li><a href="https://support.google.com/mail/answer/145919?hl=en" rel="noopener noreferrer">Google: Gmail image loading and sender visibility</a></li><li><a href="https://support.apple.com/en-lb/guide/mail/mlhl03be2866/mac" rel="noopener noreferrer">Apple: Mail Privacy Protection</a></li><li><a href="https://developers.google.com/workspace/gmail/api/auth/scopes?hl=en" rel="noopener noreferrer">Google: Gmail scopes and restricted-scope requirements</a></li><li><a href="https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send" rel="noopener noreferrer">Google: Gmail send response</a></li><li><a href="https://developers.google.com/workspace/gmail/api/guides/sync" rel="noopener noreferrer">Google: mailbox synchronization</a></li><li><a href="https://developers.google.com/workspace/gmail/api/guides/push" rel="noopener noreferrer">Google: push notifications and watch renewal</a></li><li><a href="https://github.com/fingerprintjs/fingerprintjs" rel="noopener noreferrer">FingerprintJS: implementation and accuracy/security limits</a></li><li><a href="https://mozilla.github.io/pdf.js/" rel="noopener noreferrer">Mozilla: PDF.js</a></li><li><a href="https://mailchimp.com/help/about-bot-activity/" rel="noopener noreferrer">Mailchimp: automated opens/clicks and filtering</a></li><li><a href="https://mailchimp.com/help/limitations-of-html-email/" rel="noopener noreferrer">Mailchimp: HTML email and JavaScript limitations</a></li><li><a href="https://knowledge.hubspot.com/connected-email/understand-hubspot-sales-email-open-and-click-tracking" rel="noopener noreferrer">HubSpot: open/click tracking limitations</a></li></ol>
+</section>
+<footer>Mail Tracker analytics implementation plan · Version 1 · Prepared 4 October 2026. No credentials, mailbox contents, or private recipient data are included. The document describes proposed work; publishing it does not deploy these features.</footer>
+</main></body></html>
