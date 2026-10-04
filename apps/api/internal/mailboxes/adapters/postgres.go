@@ -24,7 +24,10 @@ func (r Postgres) DeleteExpiredStates(ctx context.Context) error {
 	return err
 }
 func (r Postgres) Upsert(ctx context.Context, m domain.Mailbox, encrypted []byte) error {
-	_, err := r.Pool.Exec(ctx, `INSERT INTO mailboxes(id,owner_id,google_sub,email,encrypted_refresh_token) VALUES($1,$2,$3,$4,$5) ON CONFLICT(owner_id,google_sub) DO UPDATE SET email=excluded.email,encrypted_refresh_token=excluded.encrypted_refresh_token,connected_at=now()`, m.ID, m.OwnerID, m.GoogleSub, m.Email, encrypted)
+	if m.GrantedScopes == nil {
+		m.GrantedScopes = []string{}
+	}
+	_, err := r.Pool.Exec(ctx, `INSERT INTO mailboxes(id,owner_id,google_sub,email,encrypted_refresh_token,granted_scopes,sync_enabled) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(owner_id,google_sub) DO UPDATE SET email=excluded.email,encrypted_refresh_token=excluded.encrypted_refresh_token,connected_at=now(),granted_scopes=excluded.granted_scopes,sync_enabled=excluded.sync_enabled`, m.ID, m.OwnerID, m.GoogleSub, m.Email, encrypted, m.GrantedScopes, m.SyncEnabled)
 	return err
 }
 func (r Postgres) List(ctx context.Context, owner string) ([]domain.Mailbox, error) {

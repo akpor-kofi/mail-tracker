@@ -7,6 +7,209 @@ servers:
 security:
   - owner: []
 paths:
+  /conversations/{conversationId}/analytics:
+    get:
+      operationId: getConversationAnalytics
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Whole-conversation request and estimated-session totals with evidence policy
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/ActivitySummary' }
+  /conversations/{conversationId}/events:
+    get:
+      operationId: getActivityEvents
+      parameters:
+        - { name: conversationId, in: path, required: true, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Cursor-paginated observed activity
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/ActivityPage' }
+  /conversation-pages:
+    get:
+      operationId: getConversationPage
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 100000 } }
+        - { name: mailboxId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Paginated conversation list
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/ConversationPage' }
+  /documents/{documentId}:
+    delete:
+      operationId: deleteDocument
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Shares revoked and private object deletion queued
+          content:
+            application/json:
+              schema:
+                { type: object, required: [deleted], properties: { deleted: { type: boolean } } }
+  /documents:
+    get:
+      operationId: listDocuments
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema:
+                { 'type': 'array', 'items': { '$ref': '#/components/schemas/HostedDocument' } }
+    post:
+      operationId: uploadDocument
+      parameters:
+        - {
+            name: X-File-Name,
+            in: header,
+            required: true,
+            schema: { type: string },
+            description: Percent-encoded UTF-8 filename,
+          }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '200':
+          description: Private immutable document uploaded using Raildrop storage
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/HostedDocument' }
+  /documents/{documentId}/shares:
+    get:
+      operationId: listDocumentShares
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema: { 'type': 'array', 'items': { '$ref': '#/components/schemas/DocumentShare' } }
+    post:
+      operationId: createDocumentShare
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [days, allowDownload],
+                properties:
+                  {
+                    days: { type: integer, minimum: 1, maximum: 365 },
+                    allowDownload: { type: boolean },
+                  },
+              }
+      responses:
+        '200':
+          description: Expiring document access link
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/DocumentShare' }
+  /document-shares/{shareId}/revoke:
+    post:
+      operationId: revokeDocumentShare
+      parameters:
+        - { name: shareId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /viewer/sessions:
+    post:
+      operationId: startViewerSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                'type': 'object',
+                'required': ['token'],
+                'properties': { 'token': { 'type': 'string' } },
+              }
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/ViewerSession' }
+  /viewer/{sessionId}:
+    get:
+      operationId: getViewerSession
+      security: []
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema: { '$ref': '#/components/schemas/ViewerSession' }
+  /viewer/{sessionId}/events:
+    post:
+      operationId: recordViewerEvents
+      security: []
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { '$ref': '#/components/schemas/ViewerBatch' }
+      responses:
+        '200':
+          description: Document operation result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /viewer/{sessionId}/file:
+    get:
+      operationId: getViewerFile
+      security: []
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Session-authorized binary file; byte ranges supported
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /viewer/{sessionId}/download:
+    get:
+      operationId: downloadViewerFile
+      security: []
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Session-authorized binary file; byte ranges supported
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /health:
     get:
       operationId: getHealth
@@ -178,6 +381,31 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PairingCode' }
+  /addon/link:
+    post:
+      operationId: createAddonTrackedLink
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                type: object,
+                required: [identityToken, conversationId, destination],
+                properties:
+                  {
+                    identityToken: { type: string },
+                    conversationId: { type: string },
+                    destination: { type: string },
+                  },
+              }
+      responses:
+        '200':
+          description: Manually inserted per-draft tracked link
+          content:
+            application/json:
+              schema: { type: object, required: [url], properties: { url: { type: string } } }
   /addon/pair:
     post:
       tags: [tracking]
@@ -210,6 +438,607 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AddonPrepareResult' }
+  /goals:
+    {
+      'get':
+        {
+          'operationId': 'listGoals',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            { 'type': 'array', 'items': { '$ref': '#/components/schemas/Goal' } },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+        },
+      'post':
+        {
+          'operationId': 'createGoal',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    { 'application/json': { 'schema': { '$ref': '#/components/schemas/Goal' } } },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                { 'application/json': { 'schema': { '$ref': '#/components/schemas/GoalInput' } } },
+            },
+        },
+    }
+  /conversations/{conversationId}/outcomes:
+    {
+      'get':
+        {
+          'operationId': 'listConversationOutcomes',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'array',
+                              'items': { '$ref': '#/components/schemas/Outcome' },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'conversationId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+      'post':
+        {
+          'operationId': 'recordConversationOutcome',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json': { 'schema': { '$ref': '#/components/schemas/Outcome' } },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'conversationId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json': { 'schema': { '$ref': '#/components/schemas/OutcomeInput' } },
+                },
+            },
+        },
+    }
+  /outcomes/{outcomeId}/reverse:
+    {
+      'post':
+        {
+          'operationId': 'reverseOutcome',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'object',
+                              'required': ['reversed'],
+                              'properties': { 'reversed': { 'type': 'boolean' } },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'outcomeId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /reports:
+    {
+      'get':
+        {
+          'operationId': 'getAnalyticsReport',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/AnalyticsReport' } },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'from',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string', 'format': 'date-time' },
+              },
+              {
+                'name': 'to',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string', 'format': 'date-time' },
+              },
+              {
+                'name': 'mailboxId',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+              {
+                'name': 'goalId',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /reports/export:
+    {
+      'get':
+        {
+          'operationId': 'exportAnalyticsReport',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content': { 'text/csv': { 'schema': { 'type': 'string' } } },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'from',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string', 'format': 'date-time' },
+              },
+              {
+                'name': 'to',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string', 'format': 'date-time' },
+              },
+              {
+                'name': 'mailboxId',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+              {
+                'name': 'goalId',
+                'in': 'query',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /reminders:
+    {
+      'get':
+        {
+          'operationId': 'listReminders',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'array',
+                              'items': { '$ref': '#/components/schemas/Reminder' },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+        },
+    }
+  /conversations/{conversationId}/reminders:
+    {
+      'post':
+        {
+          'operationId': 'createReminder',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'object',
+                              'required': ['created'],
+                              'properties': { 'created': { 'type': 'boolean' } },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'conversationId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          'type': 'object',
+                          'required': ['dueAt'],
+                          'properties': { 'dueAt': { 'type': 'string', 'format': 'date-time' } },
+                        },
+                    },
+                },
+            },
+        },
+    }
+  /reminders/{reminderId}/done:
+    {
+      'post':
+        {
+          'operationId': 'completeReminder',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'object',
+                              'required': ['done'],
+                              'properties': { 'done': { 'type': 'boolean' } },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'reminderId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /mailboxes/connect-read:
+    {
+      'post':
+        {
+          'operationId': 'connectMailboxRead',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/ConnectURL' } },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          'type': 'object',
+                          'required': ['mailboxId'],
+                          'properties': { 'mailboxId': { 'type': 'string' } },
+                        },
+                    },
+                },
+            },
+        },
+    }
+  /mailboxes/health:
+    {
+      'get':
+        {
+          'operationId': 'listMailboxHealth',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'array',
+                              'items': { '$ref': '#/components/schemas/MailboxHealth' },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+        },
+    }
+  /mailboxes/{mailboxId}/pause-sync:
+    {
+      'post':
+        {
+          'operationId': 'pauseMailboxSync',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'object',
+                              'required': ['paused'],
+                              'properties': { 'paused': { 'type': 'boolean' } },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'mailboxId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /conversations/{conversationId}/messages:
+    {
+      'get':
+        {
+          'operationId': 'listConversationMessages',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'array',
+                              'items': { '$ref': '#/components/schemas/SyncedMessage' },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'conversationId',
+                'in': 'path',
+                'required': true,
+                'schema': { 'type': 'string' },
+              },
+            ],
+        },
+    }
+  /webhooks/conversions:
+    {
+      'post':
+        {
+          'operationId': 'recordConversionWebhook',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        {
+                          'schema':
+                            {
+                              'type': 'object',
+                              'required': ['recorded', 'attributed', 'id'],
+                              'properties':
+                                {
+                                  'recorded': { 'type': 'boolean' },
+                                  'attributed': { 'type': 'boolean' },
+                                  'id': { 'type': 'string' },
+                                },
+                            },
+                        },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'parameters':
+            [
+              {
+                'name': 'X-Webhook-Timestamp',
+                'in': 'header',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+              {
+                'name': 'X-Webhook-Signature',
+                'in': 'header',
+                'required': false,
+                'schema': { 'type': 'string' },
+              },
+            ],
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json': { 'schema': { '$ref': '#/components/schemas/OutcomeInput' } },
+                },
+            },
+          'security': [],
+          'description': 'HMAC-SHA256 of timestamp + dot + exact body using CONVERSION_WEBHOOK_SECRET. Timestamp tolerance five minutes. externalId required and idempotent. Unmatched attribution is retained without a delivery.',
+        },
+    }
 components:
   securitySchemes:
     owner: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -240,6 +1069,9 @@ components:
       type: object
       required: [mailboxId, to, cc, bcc, subject, html]
       properties:
+        trackConversions: { type: boolean, default: false }
+        trackLinks: { type: boolean, default: false }
+        trackedDocuments: { type: array, maxItems: 10, items: { type: string } }
         id: { type: string }
         mailboxId: { type: string }
         to: { type: array, items: { type: string } }
@@ -342,3 +1174,304 @@ components:
       properties:
         conversationId: { type: string }
         pixelUrl: { type: string }
+
+    ActivityMetric:
+      {
+        'type': 'object',
+        'required': ['raw', 'sessions', 'automation', 'legacy', 'first', 'last'],
+        'properties':
+          {
+            'raw': { 'type': 'integer' },
+            'sessions': { 'type': 'integer' },
+            'automation': { 'type': 'integer' },
+            'legacy': { 'type': 'integer' },
+            'first': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+            'last': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+          },
+      }
+    ActivityLink:
+      {
+        'type': 'object',
+        'required': ['id', 'destination', 'requests', 'eligible'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'destination': { 'type': 'string' },
+            'requests': { 'type': 'integer' },
+            'eligible': { 'type': 'integer' },
+          },
+      }
+    ActivitySummary:
+      {
+        'type': 'object',
+        'required':
+          [
+            'images',
+            'clicks',
+            'documentSessions',
+            'activeSeconds',
+            'downloads',
+            'links',
+            'capped',
+            'policy',
+            'asOf',
+          ],
+        'properties':
+          {
+            'images': { '$ref': '#/components/schemas/ActivityMetric' },
+            'clicks': { '$ref': '#/components/schemas/ActivityMetric' },
+            'documentSessions': { 'type': 'integer' },
+            'activeSeconds': { 'type': 'number' },
+            'downloads': { 'type': 'integer' },
+            'links': { 'type': 'array', 'items': { '$ref': '#/components/schemas/ActivityLink' } },
+            'capped': { 'type': 'boolean' },
+            'policy': { 'type': 'string' },
+            'asOf': { 'type': 'string', 'format': 'date-time' },
+          },
+      }
+    ActivityEvent:
+      {
+        'type': 'object',
+        'required': ['id', 'deliveryId', 'kind', 'source', 'at', 'metadata'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'deliveryId': { 'type': 'string' },
+            'kind': { 'type': 'string' },
+            'source': { 'type': 'string' },
+            'at': { 'type': 'string', 'format': 'date-time' },
+            'metadata': { 'type': 'object', 'additionalProperties': true },
+          },
+      }
+    ActivityPage:
+      {
+        'type': 'object',
+        'required': ['items', 'nextCursor'],
+        'properties':
+          {
+            'items': { 'type': 'array', 'items': { '$ref': '#/components/schemas/ActivityEvent' } },
+            'nextCursor': { 'type': 'string' },
+          },
+      }
+    ConversationPage:
+      {
+        'type': 'object',
+        'required': ['items', 'hasMore'],
+        'properties':
+          {
+            'items': { 'type': 'array', 'items': { '$ref': '#/components/schemas/Conversation' } },
+            'hasMore': { 'type': 'boolean' },
+          },
+      }
+    HostedDocument:
+      {
+        'type': 'object',
+        'required':
+          [
+            'id',
+            'filename',
+            'contentType',
+            'sizeBytes',
+            'createdAt',
+            'sessions',
+            'activeSeconds',
+            'downloads',
+          ],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'filename': { 'type': 'string' },
+            'contentType':
+              { 'type': 'string', 'enum': ['application/pdf', 'image/jpeg', 'image/png'] },
+            'sizeBytes': { 'type': 'integer' },
+            'createdAt': { 'type': 'string', 'format': 'date-time' },
+            'sessions': { 'type': 'integer' },
+            'activeSeconds': { 'type': 'number' },
+            'downloads': { 'type': 'integer' },
+          },
+      }
+    DocumentShare:
+      {
+        'type': 'object',
+        'required': ['id', 'documentId', 'expiresAt', 'revokedAt', 'allowDownload'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'documentId': { 'type': 'string' },
+            'url': { 'type': 'string' },
+            'expiresAt': { 'type': 'string', 'format': 'date-time' },
+            'revokedAt': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+            'allowDownload': { 'type': 'boolean' },
+          },
+      }
+    ViewerSession:
+      {
+        'type': 'object',
+        'required':
+          [
+            'id',
+            'documentId',
+            'filename',
+            'contentType',
+            'sizeBytes',
+            'allowDownload',
+            'expiresAt',
+          ],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'documentId': { 'type': 'string' },
+            'filename': { 'type': 'string' },
+            'contentType': { 'type': 'string' },
+            'sizeBytes': { 'type': 'integer' },
+            'allowDownload': { 'type': 'boolean' },
+            'expiresAt': { 'type': 'string', 'format': 'date-time' },
+          },
+      }
+    ViewerBatch:
+      {
+        'type': 'object',
+        'required': ['batchId', 'kind'],
+        'properties':
+          {
+            'batchId': { 'type': 'string', 'format': 'uuid' },
+            'kind':
+              { 'type': 'string', 'enum': ['viewer_loaded', 'viewer_activity', 'page_exposure'] },
+            'activeMs': { 'type': 'integer', 'minimum': 0, 'maximum': 15000 },
+            'pages':
+              {
+                'type': 'array',
+                'maxItems': 100,
+                'items': { 'type': 'integer', 'minimum': 1, 'maximum': 1000 },
+              },
+          },
+      }
+    Goal:
+      {
+        'type': 'object',
+        'required': ['id', 'name', 'windowDays'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'name': { 'type': 'string' },
+            'windowDays': { 'type': 'integer' },
+          },
+      }
+    GoalInput:
+      {
+        'type': 'object',
+        'required': ['name', 'windowDays'],
+        'properties':
+          {
+            'name': { 'type': 'string', 'minLength': 1, 'maxLength': 100 },
+            'windowDays': { 'type': 'integer', 'minimum': 1, 'maximum': 365 },
+          },
+      }
+    OutcomeInput:
+      {
+        'type': 'object',
+        'required': ['goalId', 'occurredAt'],
+        'properties':
+          {
+            'goalId': { 'type': 'string', 'format': 'uuid' },
+            'occurredAt': { 'type': 'string', 'format': 'date-time' },
+            'deliveryId': { 'type': 'string' },
+            'attributionRef': { 'type': 'string' },
+            'externalId': { 'type': 'string', 'maxLength': 128 },
+            'value': { 'type': 'string', 'pattern': "^(0|[1-9][0-9]{0,12})(\\.[0-9]{1,2})?$" },
+            'currency': { 'type': 'string', 'pattern': '^[A-Z]{3}$' },
+          },
+      }
+    Outcome:
+      {
+        'type': 'object',
+        'required':
+          ['id', 'goalId', 'deliveryId', 'source', 'occurredAt', 'reversedAt', 'value', 'currency'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'goalId': { 'type': 'string' },
+            'deliveryId': { 'type': 'string', 'nullable': true },
+            'source': { 'type': 'string' },
+            'occurredAt': { 'type': 'string', 'format': 'date-time' },
+            'reversedAt': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+            'value': { 'type': 'string', 'nullable': true },
+            'currency': { 'type': 'string', 'nullable': true },
+          },
+      }
+    AnalyticsReport:
+      {
+        'type': 'object',
+        'required':
+          [
+            'sent',
+            'imageActive',
+            'linked',
+            'clicked',
+            'replied',
+            'bounceReported',
+            'converted',
+            'prepared',
+            'unknown',
+            'from',
+            'to',
+            'policy',
+          ],
+        'properties':
+          {
+            'sent': { 'type': 'integer' },
+            'imageActive': { 'type': 'integer' },
+            'linked': { 'type': 'integer' },
+            'clicked': { 'type': 'integer' },
+            'replied': { 'type': 'integer' },
+            'bounceReported': { 'type': 'integer' },
+            'converted': { 'type': 'integer' },
+            'prepared': { 'type': 'integer' },
+            'unknown': { 'type': 'integer' },
+            'from': { 'type': 'string', 'format': 'date-time' },
+            'to': { 'type': 'string', 'format': 'date-time' },
+            'policy': { 'type': 'string' },
+          },
+      }
+    MailboxHealth:
+      {
+        'type': 'object',
+        'required':
+          ['id', 'email', 'syncEnabled', 'syncStatus', 'error', 'lastSyncAt', 'addonPaired'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'email': { 'type': 'string' },
+            'syncEnabled': { 'type': 'boolean' },
+            'syncStatus': { 'type': 'string' },
+            'error': { 'type': 'string' },
+            'lastSyncAt': { 'type': 'string', 'format': 'date-time', 'nullable': true },
+            'addonPaired': { 'type': 'boolean' },
+          },
+      }
+    Reminder:
+      {
+        'type': 'object',
+        'required': ['id', 'conversationId', 'subject', 'dueAt'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'conversationId': { 'type': 'string' },
+            'subject': { 'type': 'string' },
+            'dueAt': { 'type': 'string', 'format': 'date-time' },
+          },
+      }
+    SyncedMessage:
+      {
+        'type': 'object',
+        'required': ['id', 'subject', 'sender', 'snippet', 'direction', 'at'],
+        'properties':
+          {
+            'id': { 'type': 'string' },
+            'subject': { 'type': 'string' },
+            'sender': { 'type': 'string' },
+            'snippet': { 'type': 'string' },
+            'direction': { 'type': 'string' },
+            'at': { 'type': 'string', 'format': 'date-time' },
+          },
+      }

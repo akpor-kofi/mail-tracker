@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/akpor-kofi/mail-tracker/apps/api/internal/mailboxes/domain"
@@ -34,6 +35,16 @@ func random() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 func (s OAuthService) Start(ctx context.Context, owner string) (string, error) {
+	return s.start(ctx, owner, "")
+}
+func (s OAuthService) StartRead(ctx context.Context, owner, mailbox string) (string, error) {
+	m, _, e := s.Repo.Get(ctx, mailbox)
+	if e != nil || m.OwnerID != owner {
+		return "", errors.New("mailbox not found")
+	}
+	return s.start(ctx, owner, mailbox)
+}
+func (s OAuthService) start(ctx context.Context, owner, readMailbox string) (string, error) {
 	state, err := random()
 	if err != nil {
 		return "", err
@@ -43,16 +54,33 @@ func (s OAuthService) Start(ctx context.Context, owner string) (string, error) {
 		return "", err
 	}
 	hash := sha256.Sum256([]byte(state))
-	if err := s.Repo.SaveState(ctx, hash[:], owner, verifier, time.Now().Add(10*time.Minute)); err != nil {
+	storedVerifier := verifier
+	if readMailbox != "" {
+		storedVerifier = "read:" + readMailbox + ":" + verifier
+	}
+	if err := s.Repo.SaveState(ctx, hash[:], owner, storedVerifier, time.Now().Add(10*time.Minute)); err != nil {
 		return "", err
 	}
-	return s.Config().AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.S256ChallengeOption(verifier)), nil
+	cfg := s.Config()
+	if readMailbox != "" {
+		cfg.Scopes = append(cfg.Scopes, "https://www.googleapis.com/auth/gmail.readonly")
+	}
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.S256ChallengeOption(verifier)), nil
 }
 func (s OAuthService) Complete(ctx context.Context, state, code string) (string, error) {
 	hash := sha256.Sum256([]byte(state))
 	owner, verifier, err := s.Repo.ConsumeState(ctx, hash[:])
 	if err != nil {
 		return "", errors.New("invalid or expired OAuth state")
+	}
+	readMailbox := ""
+	if strings.HasPrefix(verifier, "read:") {
+		parts := strings.SplitN(verifier, ":", 3)
+		if len(parts) != 3 {
+			return "", errors.New("invalid OAuth state")
+		}
+		readMailbox = parts[1]
+		verifier = parts[2]
 	}
 	token, err := s.Config().Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
@@ -81,7 +109,24 @@ func (s OAuthService) Complete(ctx context.Context, state, code string) (string,
 	if err != nil {
 		return "", err
 	}
-	m := domain.Mailbox{ID: uuid.NewString(), OwnerID: owner, GoogleSub: identity.Subject, Email: email}
+	scopes, _ := token.Extra("scope").(string)
+	granted := strings.Fields(scopes)
+	syncEnabled := false
+	if readMailbox != "" {
+		m, _, e := s.Repo.Get(ctx, readMailbox)
+		if e != nil || m.OwnerID != owner || m.GoogleSub != identity.Subject {
+			return "", errors.New("choose the Gmail account that requested reply synchronization")
+		}
+		for _, scope := range granted {
+			if scope == "https://www.googleapis.com/auth/gmail.readonly" {
+				syncEnabled = true
+			}
+		}
+		if !syncEnabled {
+			return "", errors.New("Google did not grant the requested read access")
+		}
+	}
+	m := domain.Mailbox{GrantedScopes: granted, SyncEnabled: syncEnabled, ID: uuid.NewString(), OwnerID: owner, GoogleSub: identity.Subject, Email: email}
 	if err := s.Repo.Upsert(ctx, m, encrypted); err != nil {
 		return "", err
 	}

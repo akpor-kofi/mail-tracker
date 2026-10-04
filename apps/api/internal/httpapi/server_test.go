@@ -20,7 +20,7 @@ func (rejectingOwner) Verify(context.Context, string) (string, error) {
 func TestDomainRoutesRequireOwner(t *testing.T) {
 	app := fiber.New()
 	RegisterRoutes(app.Group("/api/v1"), &Server{Auth: rejectingOwner{}})
-	for _, path := range []string{"/api/v1/mailboxes", "/api/v1/drafts", "/api/v1/conversations"} {
+	for _, path := range []string{"/api/v1/mailboxes", "/api/v1/drafts", "/api/v1/conversations", "/api/v1/documents", "/api/v1/goals", "/api/v1/reports", "/api/v1/mailboxes/health"} {
 		response, err := app.Test(httptest.NewRequest("GET", path, nil))
 		if err != nil {
 			t.Fatal(err)

@@ -3,7 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/analytics"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/documents"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/mailsync"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/outcomes"
+	"github.com/akpor-kofi/raildrop/sdk/go"
+	"github.com/akpor-kofi/raildrop/sdk/go/s3store"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -57,7 +64,7 @@ func main() {
 	mailboxes := mailboxdb.Postgres{Pool: pool}
 	pairings := trackingdb.PairingPostgres{Pool: pool}
 	oauth := mailboxapp.OAuthService{Repo: mailboxes, Sealer: sealer, Cache: &mailboxapp.AccessTokenCache{}, ClientID: required("GOOGLE_CLIENT_ID"), ClientSecret: required("GOOGLE_CLIENT_SECRET"), BaseURL: publicURL}
-	correspondence := corrdb.Postgres{Pool: pool}
+	correspondence := corrdb.Postgres{Pool: pool, PublicURL: publicURL}
 	if err := correspondence.RecoverInterrupted(context.Background()); err != nil {
 		log.Fatal(err)
 	}
@@ -111,7 +118,48 @@ func main() {
 	}()
 	sender := corrdb.Gmail{OAuth: oauth, Attachments: files}
 	addon := trackingapp.AddonService{Pairs: pairings, Tracking: tracking, Identity: trackingdb.GoogleIdentity{ClientID: required("GOOGLE_ADDON_CLIENT_ID")}, PublicURL: publicURL, Events: broker}
-	server := &httpapi.Server{Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL, Slots: make(chan struct{}, 4)}, Tracking: tracking, Addon: addon}
+	activity := analytics.Store{Pool: pool, PublicURL: publicURL}
+	go activity.Run(cleanupCtx, broker.Publish)
+	var objectStorage raildrop.Storage
+	if os.Getenv("RAILDROP_BUCKET") != "" {
+		cfg, e := s3store.BucketConfigFromEnv()
+		if e != nil {
+			log.Fatal("invalid document bucket configuration")
+		}
+		objectStorage, e = s3store.NewRailwayBucketStorage(cfg, &http.Client{Timeout: 45 * time.Second})
+		if e != nil {
+			log.Fatal("invalid document bucket configuration")
+		}
+	}
+	documentStore := documents.Store{Pool: pool, Storage: objectStorage, PublicURL: publicURL}
+	if objectStorage != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_, e := objectStorage.List(ctx, "private/documents/", "")
+		cancel()
+		if e != nil {
+			log.Fatal("document bucket connection failed")
+		}
+		log.Print("private document bucket ready")
+	}
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(cleanupCtx, time.Minute)
+				if e := documentStore.Cleanup(ctx); e != nil {
+					log.Print("document cleanup failed")
+				}
+				cancel()
+			}
+		}
+	}()
+
+	go (mailsync.Worker{Pool: pool, OAuth: oauth, Activity: activity}).Run(cleanupCtx)
+	server := &httpapi.Server{Outcomes: outcomes.Store{Pool: pool}, WebhookSecret: os.Getenv("CONVERSION_WEBHOOK_SECRET"), Documents: documentStore, Analytics: activity, Auth: &accountdb.Verifier{JWKSURL: required("JWKS_URL"), Issuer: publicURL, OwnerEmail: required("OWNER_EMAIL"), Pool: pool}, Mailbox: oauth, MailboxRepo: mailboxes, Correspondence: correspondence, Send: corrapp.Service{Repo: correspondence, Sender: sender, Files: files, Events: broker, PublicURL: publicURL, Slots: make(chan struct{}, 4)}, Tracking: tracking, Addon: addon}
 	app := fiber.New(fiber.Config{BodyLimit: 21 << 20, ErrorHandler: func(c fiber.Ctx, err error) error {
 		code := 500
 		message := "internal error"
@@ -122,10 +170,12 @@ func main() {
 			}
 		}
 		if code >= 500 {
-			log.Printf("HTTP %d %s %s: %v", code, c.Method(), c.Path(), err)
+			log.Printf("HTTP %d %s %s: %v", code, c.Method(), "[path redacted]", err)
 		}
 		return c.Status(code).JSON(fiber.Map{"error": message})
 	}})
+	app.Get("/c/:token", publicLimit(600), server.LinkRedirect)
+	app.Head("/c/:token", publicLimit(600), server.LinkRedirect)
 	app.Get("/p/:token", publicLimit(600), server.Pixel)
 	app.Get("/oauth/google/callback", publicLimit(30), server.OAuthCallback)
 	app.Get("/api/v1/events", server.Events)
@@ -161,6 +211,9 @@ func main() {
 	})
 	app.Use("/api/v1/addon/pair", publicLimit(20))
 	app.Use("/api/v1/addon/prepare", publicLimit(60))
+	app.Use("/api/v1/addon/link", publicLimit(60))
+	app.Use("/api/v1/webhooks", publicLimit(60))
+	app.Use("/api/v1/viewer", publicLimit(600))
 	httpapi.RegisterRoutes(app.Group("/api/v1"), server)
 	log.Fatal(app.Listen(":8080"))
 }

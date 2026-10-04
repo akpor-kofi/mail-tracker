@@ -1,6 +1,6 @@
 {$TRACKER_DOMAIN} {
   encode zstd gzip
-  @api path /api/v1/* /oauth/google/callback /p/*
+  @api path /api/v1/* /oauth/google/callback /p/* /c/*
   handle @api {
     reverse_proxy api:8080
   }

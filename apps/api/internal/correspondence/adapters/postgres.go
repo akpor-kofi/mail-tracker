@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/analytics"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/documents"
+	"html"
 	"time"
 
 	"github.com/akpor-kofi/mail-tracker/apps/api/internal/correspondence/application"
@@ -15,7 +18,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Postgres struct{ Pool *pgxpool.Pool }
+type Postgres struct {
+	Pool      *pgxpool.Pool
+	PublicURL string
+}
 
 var ErrDraftAttachment = errors.New("attachment missing or not owned by this account")
 
@@ -61,13 +67,36 @@ func (r Postgres) CreateAttempt(ctx context.Context, owner, key string, d domain
 		}
 		return id, true, nil
 	}
-	for _, delivery := range ds {
+	for i := range ds {
+		delivery := &ds[i]
 		hash := sha256.Sum256([]byte(delivery.PixelToken))
 		_, err = tx.Exec(ctx, `INSERT INTO deliveries(id,conversation_id,recipients,reply_all_recipients,pixel_token_hash,status) VALUES($1,$2,$3,$4,$5,'pending')`, delivery.ID, id, delivery.Recipients, delivery.ReplyAllRecipients, hash[:])
 		if err != nil {
 			return "", false, err
 		}
 	}
+	for i := range ds {
+		body := d.HTML
+		if d.TrackLinks {
+			body, err = analytics.RewriteLinksWithAttribution(ctx, tx, ds[i].ID, body, r.PublicURL, d.TrackConversions)
+			if err != nil {
+				return "", false, err
+			}
+		}
+		for _, doc := range d.TrackedDocuments {
+			share, e := documents.CreateShare(ctx, tx, owner, doc, ds[i].ID, r.PublicURL, 30, true)
+			if e != nil {
+				return "", false, &application.ValidationError{Message: "tracked document not found or unavailable"}
+			}
+			var filename string
+			if e = tx.QueryRow(ctx, `SELECT filename FROM documents WHERE id=$1 AND owner_id=$2`, doc, owner).Scan(&filename); e != nil {
+				return "", false, e
+			}
+			body += `<p><a href="` + html.EscapeString(share.URL) + `">View ` + html.EscapeString(filename) + `</a> (tracked document link; expires in 30 days)</p>`
+		}
+		ds[i].HTML = body
+	}
+
 	return id, false, tx.Commit(ctx)
 }
 func (r Postgres) UpdateDelivery(ctx context.Context, id, status string, sent application.SentMessage, errText string) error {
@@ -76,7 +105,7 @@ func (r Postgres) UpdateDelivery(ctx context.Context, id, status string, sent ap
 		return err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `UPDATE deliveries SET status=$2,gmail_message_id=NULLIF($3,''),gmail_thread_id=NULLIF($4,''),rfc_message_id=NULLIF($5,''),error=NULLIF($6,'') WHERE id=$1`, id, status, sent.GmailID, sent.ThreadID, sent.RFCMessageID, errText)
+	_, err = tx.Exec(ctx, `UPDATE deliveries SET status=$2,confirmed_sent_at=CASE WHEN $2='sent' THEN COALESCE(confirmed_sent_at,now()) ELSE confirmed_sent_at END,instrumentation_version=2,gmail_message_id=NULLIF($3,''),gmail_thread_id=NULLIF($4,''),rfc_message_id=NULLIF($5,''),error=NULLIF($6,'') WHERE id=$1`, id, status, sent.GmailID, sent.ThreadID, sent.RFCMessageID, errText)
 	if err != nil {
 		return err
 	}

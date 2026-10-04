@@ -13,7 +13,12 @@ import (
 )
 
 func draftIn(d corrapi.DraftInput) corrdomain.Draft {
-	return corrdomain.Draft{ID: str(d.Id), MailboxID: d.MailboxId, To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.Html, ReplyToMessageID: str(d.ReplyToMessageId), ThreadID: str(d.ThreadId), Attachments: func() []string {
+	return corrdomain.Draft{TrackConversions: d.TrackConversions != nil && *d.TrackConversions, TrackLinks: d.TrackLinks != nil && *d.TrackLinks, TrackedDocuments: func() []string {
+		if d.TrackedDocuments == nil {
+			return nil
+		}
+		return *d.TrackedDocuments
+	}(), ID: str(d.Id), MailboxID: d.MailboxId, To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.Html, ReplyToMessageID: str(d.ReplyToMessageId), ThreadID: str(d.ThreadId), Attachments: func() []string {
 		if d.Attachments == nil {
 			return nil
 		}
@@ -22,7 +27,7 @@ func draftIn(d corrapi.DraftInput) corrdomain.Draft {
 }
 
 func draftOut(d corrdb.DraftRecord) corrapi.Draft {
-	return corrapi.Draft{Id: d.ID, MailboxId: d.Content.MailboxID, To: d.Content.To, Cc: d.Content.Cc, Bcc: d.Content.Bcc, Subject: d.Content.Subject, Html: d.Content.HTML, ReplyToMessageId: ptr(d.Content.ReplyToMessageID), ThreadId: ptr(d.Content.ThreadID), Attachments: &d.Content.Attachments, UpdatedAt: d.UpdatedAt}
+	return corrapi.Draft{TrackConversions: &d.Content.TrackConversions, TrackLinks: &d.Content.TrackLinks, TrackedDocuments: &d.Content.TrackedDocuments, Id: d.ID, MailboxId: d.Content.MailboxID, To: d.Content.To, Cc: d.Content.Cc, Bcc: d.Content.Bcc, Subject: d.Content.Subject, Html: d.Content.HTML, ReplyToMessageId: ptr(d.Content.ReplyToMessageID), ThreadId: ptr(d.Content.ThreadID), Attachments: &d.Content.Attachments, UpdatedAt: d.UpdatedAt}
 }
 
 func deliveryOut(d corrapp.Delivery) corrapi.Delivery {

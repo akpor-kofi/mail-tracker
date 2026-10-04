@@ -16,6 +16,7 @@ import (
 )
 
 type Delivery struct {
+	HTML               string
 	ID                 string
 	Recipients         []string
 	ReplyAllRecipients []string
@@ -128,7 +129,11 @@ func (s Service) run(owner string, d domain.Draft, plans []domain.PlannedDeliver
 				}
 				pixelURL := fmt.Sprintf("%s/p/%s.gif", s.PublicURL, deliveries[i].PixelToken)
 				sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				sent, sendErr := s.Sender.Send(sendCtx, d.MailboxID, d, plans[i], pixelURL)
+				draft := d
+				if deliveries[i].HTML != "" {
+					draft.HTML = deliveries[i].HTML
+				}
+				sent, sendErr := s.Sender.Send(sendCtx, d.MailboxID, draft, plans[i], pixelURL)
 				cancel()
 				if s.Slots != nil {
 					<-s.Slots

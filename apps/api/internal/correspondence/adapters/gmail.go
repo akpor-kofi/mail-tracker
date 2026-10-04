@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	nethtml "golang.org/x/net/html"
 	"html"
 	"io"
 	"mime"
@@ -37,7 +38,34 @@ var tags = regexp.MustCompile(`<[^>]+>`)
 
 func cleanHeader(s string) string { return strings.NewReplacer("\r", "", "\n", "").Replace(s) }
 func plainText(clean string) string {
-	return strings.TrimSpace(html.UnescapeString(tags.ReplaceAllString(strings.ReplaceAll(clean, "<br>", "\n"), " ")))
+	root, err := nethtml.Parse(strings.NewReader(clean))
+	if err != nil {
+		return strings.TrimSpace(html.UnescapeString(tags.ReplaceAllString(clean, " ")))
+	}
+	var out strings.Builder
+	var walk func(*nethtml.Node)
+	walk = func(n *nethtml.Node) {
+		if n.Type == nethtml.TextNode {
+			out.WriteString(n.Data)
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+		if n.Type == nethtml.ElementNode {
+			if n.Data == "a" {
+				for _, a := range n.Attr {
+					if a.Key == "href" {
+						out.WriteString(" (" + a.Val + ")")
+					}
+				}
+			}
+			if n.Data == "p" || n.Data == "br" || n.Data == "div" {
+				out.WriteString("\n")
+			}
+		}
+	}
+	walk(root)
+	return strings.TrimSpace(out.String())
 }
 func writeMIMEBase64(w io.Writer, data []byte) error {
 	var encoded [76]byte

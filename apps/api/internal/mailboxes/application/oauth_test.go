@@ -63,3 +63,29 @@ func TestStartStoresHashedStateAndPKCE(t *testing.T) {
 		t.Fatal("wrong OAuth scopes or access type")
 	}
 }
+
+type readRepo struct{ stateRepo }
+
+func (r *readRepo) Get(context.Context, string) (domain.Mailbox, []byte, error) {
+	return domain.Mailbox{ID: "mailbox", OwnerID: "owner"}, nil, nil
+}
+func TestReadScopeIsOptIn(t *testing.T) {
+	repo := &readRepo{}
+	service := OAuthService{Repo: repo, ClientID: "client", BaseURL: "https://example.com"}
+	raw, e := service.StartRead(context.Background(), "owner", "mailbox")
+	if e != nil {
+		t.Fatal(e)
+	}
+	u, _ := url.Parse(raw)
+	if !strings.Contains(u.Query().Get("scope"), "gmail.readonly") || !strings.HasPrefix(repo.verifier, "read:mailbox:") {
+		t.Fatal("read grant not tied to mailbox")
+	}
+	raw, e = service.Start(context.Background(), "owner")
+	if e != nil {
+		t.Fatal(e)
+	}
+	u, _ = url.Parse(raw)
+	if strings.Contains(u.Query().Get("scope"), "gmail.readonly") {
+		t.Fatal("send-only connection expanded silently")
+	}
+}

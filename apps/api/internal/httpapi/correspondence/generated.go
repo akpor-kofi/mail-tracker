@@ -84,6 +84,9 @@ type Draft struct {
 	Subject          string    `json:"subject"`
 	ThreadId         *string   `json:"threadId,omitempty"`
 	To               []string  `json:"to"`
+	TrackConversions *bool     `json:"trackConversions,omitempty"`
+	TrackLinks       *bool     `json:"trackLinks,omitempty"`
+	TrackedDocuments *[]string `json:"trackedDocuments,omitempty"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
@@ -99,6 +102,9 @@ type DraftInput struct {
 	Subject          string    `json:"subject"`
 	ThreadId         *string   `json:"threadId,omitempty"`
 	To               []string  `json:"to"`
+	TrackConversions *bool     `json:"trackConversions,omitempty"`
+	TrackLinks       *bool     `json:"trackLinks,omitempty"`
+	TrackedDocuments *[]string `json:"trackedDocuments,omitempty"`
 }
 
 // SendInput defines model for SendInput.

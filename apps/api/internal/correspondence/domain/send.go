@@ -7,6 +7,9 @@ import (
 )
 
 type Draft struct {
+	TrackConversions bool     `json:"trackConversions,omitempty"`
+	TrackLinks       bool     `json:"trackLinks,omitempty"`
+	TrackedDocuments []string `json:"trackedDocuments,omitempty"`
 	ID               string   `json:"id,omitempty"`
 	MailboxID        string   `json:"mailboxId"`
 	To               []string `json:"to"`
@@ -26,6 +29,9 @@ type PlannedDelivery struct {
 }
 
 func Plan(d Draft, mode string) ([]PlannedDelivery, error) {
+	if len(d.TrackedDocuments) > 10 {
+		return nil, errors.New("at most 10 tracked documents per send")
+	}
 	if d.MailboxID == "" || strings.TrimSpace(d.Subject) == "" || len(d.To) == 0 {
 		return nil, errors.New("mailbox, subject, and To recipient are required")
 	}

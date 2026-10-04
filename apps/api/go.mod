@@ -3,12 +3,14 @@ module github.com/akpor-kofi/mail-tracker/apps/api
 go 1.25.0
 
 require (
+	github.com/akpor-kofi/raildrop/sdk/go v0.1.0
 	github.com/gofiber/fiber/v3 v3.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/runtime v1.7.0
+	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.22.0
 	google.golang.org/api v0.264.0
@@ -47,7 +49,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d // indirect

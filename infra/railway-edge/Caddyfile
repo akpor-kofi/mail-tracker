@@ -11,7 +11,7 @@
     respond "ok" 200
   }
 
-  @api path /api/v1/* /oauth/google/callback /p/*
+  @api path /api/v1/* /oauth/google/callback /p/* /c/*
   handle @api {
     reverse_proxy api.railway.internal:8080 {
       header_up X-Forwarded-Proto https

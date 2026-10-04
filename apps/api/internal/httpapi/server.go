@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/analytics"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/documents"
+	"github.com/akpor-kofi/mail-tracker/apps/api/internal/outcomes"
 	"log"
 	"net/url"
 	"strings"
@@ -52,6 +55,10 @@ func safeDeliveryError(status, stored string) *string {
 }
 
 type Server struct {
+	Outcomes       outcomes.Store
+	WebhookSecret  string
+	Documents      documents.Store
+	Analytics      analytics.Store
 	Auth           accounts.OwnerVerifier
 	Mailbox        mailboxapp.OAuthService
 	MailboxRepo    mailboxapp.Repository
@@ -96,6 +103,10 @@ func (s *Server) TrackingMiddleware() trackingapi.StrictMiddlewareFunc {
 
 func RegisterRoutes(router fiber.Router, s *Server) {
 	router.Get("/health", s.Health)
+	s.RegisterAnalytics(router)
+	s.RegisterDocuments(router)
+	s.RegisterOutcomes(router)
+	s.RegisterSync(router)
 	mailboxapi.RegisterHandlers(router, mailboxapi.NewStrictHandler(s, []mailboxapi.StrictMiddlewareFunc{s.MailboxesMiddleware()}))
 	corrapi.RegisterHandlers(router, corrapi.NewStrictHandler(s, []corrapi.StrictMiddlewareFunc{s.CorrespondenceMiddleware()}))
 	trackingapi.RegisterHandlers(router, trackingapi.NewStrictHandler(s, []trackingapi.StrictMiddlewareFunc{s.TrackingMiddleware()}))
@@ -111,6 +122,11 @@ func (s *Server) Pixel(c fiber.Ctx) error {
 		hash := sha256.Sum256([]byte(token))
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
+		if s.Analytics.Pool != nil {
+			if err := s.Analytics.Pixel(ctx, hash[:], c.Get("User-Agent")); err != nil {
+				log.Print("pixel observation unavailable")
+			}
+		}
 		who, err := s.Tracking.RecordOpen(ctx, hash[:])
 		if err == nil && s.Send.Events != nil {
 			s.Send.Events.Publish(who)
