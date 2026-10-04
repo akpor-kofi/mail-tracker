@@ -6,12 +6,12 @@ Self-hosted Gmail open detection for one owner with multiple connected Gmail acc
 
 ## Two ways to track
 
-| Path | What happens | Send confirmation | Recipient tracking |
-| --- | --- | --- | --- |
-| Gmail add-on | Inserts a 1×1 transparent image at the end of the active Gmail draft | Remains **Prepared** until an image request; Gmail send cannot be confirmed | Aggregate for that draft |
+| Path           | What happens                                                            | Send confirmation                                                                            | Recipient tracking                                                                 |
+| -------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Gmail add-on   | Inserts a 1×1 transparent image at the end of the active Gmail draft    | Remains **Prepared** until an image request; Gmail send cannot be confirmed                  | Aggregate for that draft                                                           |
 | Track and Send | Composer queues a send through the chosen Gmail account using Gmail API | Starts **Sending**, then shows per-delivery **Sent**, **Failed**, or **Send status unknown** | One pixel per To recipient with **Separate sends**; aggregate with **Shared send** |
 
-The app does not read incoming mail or detect incoming replies. Local composer drafts live on your instance, not Gmail Drafts. Outgoing replies can be prepared in Gmail or composed from a sent conversation in the dashboard.
+Send-only connections do not read incoming mail. Optional read-access reconnect enables tracked-thread snippets, reply matching and bounce reports. Local composer drafts live on your instance, not Gmail Drafts. Outgoing replies can be prepared in Gmail or composed from a sent conversation in the dashboard.
 
 ## Requirements
 
@@ -56,6 +56,12 @@ cd apps/api && GOTOOLCHAIN=go1.25.1 go test ./...
 The API requires the environment variables in `infra/.env.example`; point `DATABASE_URL` at a local PostgreSQL instance. Better Auth schema migrations run on dashboard container startup. The Go service applies its own numbered SQL migrations on startup. Both migrators use one PostgreSQL advisory lock to serialize schema changes. The source OpenAPI file is [`packages/api-contract/openapi.yaml`](packages/api-contract/openapi.yaml). Run `pnpm generate` and `pnpm generate:go` after changing it; see [architecture](docs/architecture.md) for the generated package layout.
 
 The dashboard uses shadcn/ui components and a small theme in `apps/dashboard/src/app/styles.css`. Run `pnpm dlx shadcn@latest add COMPONENT` from `apps/dashboard` when adding another shared control; its configuration is in `apps/dashboard/components.json`.
+
+## Conversation analytics and hosted documents
+
+Conversation detail includes raw image/link requests, proxy/scanner labels, estimated five-minute sessions, first/last activity, per-link counts and a paginated timeline. Compose can rewrite HTTP(S) links per delivery and include private hosted PDF/image links. Documents provides expiring/revocable shares; the viewer measures page exposure, approximate active time, revisits and download requests. Reports provides confirmed-send cohorts, click/reply/conversion rates, CSV export, goals and follow-up reminders.
+
+Private document storage uses [Raildrop Go SDK](https://github.com/akpor-kofi/raildrop) v0.1.0. Configuration, signed conversion integration and deployment checks are described in [analytics operations](docs/analytics.md). Browser fingerprints, precise recipient identity, recipient spam placement and native attachment opens are not measured.
 
 ## Operations
 

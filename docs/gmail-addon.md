@@ -10,3 +10,7 @@ The add-on is installed from your own Apps Script project. Its manifest must nam
 6. In a Gmail compose window, use the add-on's **Prepare tracking** action. Enter a subject for the dashboard and click **Insert tracking image**. The image is inserted at the end of the draft. The dashboard shows **Prepared**. A recipient image request changes the open-detection state; the add-on cannot confirm sending.
 
 The image is 1×1 and styled `display:none`. Mail clients may rewrite or drop its style, remove the image, or cache it. Test a real sent draft to a recipient account you control before relying on it. The add-on's draft path is aggregate when there are multiple recipients. Use the dashboard's Separate sends for individual pixels.
+
+## Manually insert a tracked link
+
+The compose card accepts an optional HTTP(S) destination and label. Insert tracking creates a link tied to that prepared conversation and appends it with the image. Existing links in the Gmail draft are not automatically rewritten. After updating the source, save/reinstall the test deployment or publish a new add-on version as appropriate. Gmail send confirmation remains unavailable in add-on mode until separately reconciled.
