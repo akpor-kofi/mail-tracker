@@ -6,11 +6,19 @@ function post_(path, body) {
     muteHttpExceptions: true,
   });
   if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Mail Tracker request failed (' +
-        response.getResponseCode() +
-        '). Check pairing and instance availability.',
-    );
+    var status = response.getResponseCode();
+    if (status === 401 && path === 'pair') {
+      throw new Error(
+        'This pairing code may have already been used, expired, or be invalid. If you already paired successfully, open a Gmail draft and choose Prepare tracking. Otherwise, generate a new code in Dashboard → Settings and use the matching Gmail account.',
+      );
+    }
+    if (status === 401 && path === 'prepare') {
+      throw new Error(
+        'Could not verify this Gmail account. Pair it using a new code from Dashboard → Settings. If pairing also fails, check the add-on client ID in your instance settings.',
+      );
+    }
+    if (status === 429) throw new Error('Too many attempts. Wait a minute and try again.');
+    throw new Error('Mail Tracker is temporarily unavailable. Try again shortly.');
   }
   return JSON.parse(response.getContentText());
 }
@@ -20,13 +28,20 @@ function formValue_(e, name) {
   return (item && item.stringInputs && item.stringInputs.value && item.stringInputs.value[0]) || '';
 }
 function homeCard() {
-  var section = CardService.newCardSection()
+  return pairingCard_('', '');
+}
+function pairingCard_(message, code) {
+  var section = CardService.newCardSection();
+  if (message) section.addWidget(CardService.newTextParagraph().setText(message));
+  section
     .addWidget(
       CardService.newTextParagraph().setText(
         'Pair this Gmail account with your self-hosted Mail Tracker instance. Generate a one-use code in Dashboard → Settings.',
       ),
     )
-    .addWidget(CardService.newTextInput().setFieldName('pair_code').setTitle('Pairing code'))
+    .addWidget(
+      CardService.newTextInput().setFieldName('pair_code').setTitle('Pairing code').setValue(code),
+    )
     .addWidget(
       CardService.newTextButton()
         .setText('Pair account')
@@ -38,11 +53,39 @@ function homeCard() {
     .build();
 }
 function pairAccount(e) {
-  var code = formValue_(e, 'pair_code');
-  if (!code) throw new Error('Enter the pairing code from Settings.');
-  post_('pair', { code: code, identityToken: ScriptApp.getIdentityToken() });
+  var code = formValue_(e, 'pair_code').trim();
+  if (!code) return pairingError_('Enter a new pairing code from Dashboard → Settings.', code);
+  try {
+    post_('pair', { code: code, identityToken: ScriptApp.getIdentityToken() });
+  } catch (error) {
+    return pairingError_(
+      error.message || 'Could not connect to Mail Tracker. Try again shortly.',
+      code,
+    );
+  }
+  var card = CardService.newCardBuilder()
+    .setHeader(CardService.newCardHeader().setTitle('Gmail account paired'))
+    .addSection(
+      CardService.newCardSection().addWidget(
+        CardService.newTextParagraph().setText(
+          'Pairing is complete. You do not need to enter this code again. To track an email, open a Gmail draft and choose Prepare tracking in the compose toolbar.',
+        ),
+      ),
+    )
+    .build();
   return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(card))
     .setNotification(CardService.newNotification().setText('This Gmail account is paired.'))
+    .build();
+}
+function pairingError_(message, code) {
+  return CardService.newActionResponseBuilder()
+    .setNavigation(CardService.newNavigation().updateCard(pairingCard_(message, code)))
+    .build();
+}
+function notice_(message) {
+  return CardService.newActionResponseBuilder()
+    .setNotification(CardService.newNotification().setText(message))
     .build();
 }
 function composeCard(e) {
@@ -80,11 +123,16 @@ function insertPixel(e) {
     (e.gmail && e.gmail.ccRecipients) || [],
     (e.gmail && e.gmail.bccRecipients) || [],
   );
-  var result = post_('prepare', {
-    identityToken: ScriptApp.getIdentityToken(),
-    subject: subject,
-    recipients: recipients,
-  });
+  var result;
+  try {
+    result = post_('prepare', {
+      identityToken: ScriptApp.getIdentityToken(),
+      subject: subject,
+      recipients: recipients,
+    });
+  } catch (error) {
+    return notice_(error.message || 'Could not connect to Mail Tracker. Try again shortly.');
+  }
   var image =
     '<img src="' + result.pixelUrl + '" width="1" height="1" alt="" style="display:none" />';
   return CardService.newUpdateDraftActionResponseBuilder()
