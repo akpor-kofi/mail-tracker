@@ -12,3 +12,6 @@ apps/gmail-addon/.clasp.json
 apps/gmail-addon/src/Config.gs
 apps/gmail-addon/src/appsscript.json
 *.tsbuildinfo
+
+apps/dashboard/public/pdf.worker.mjs
+apps/dashboard/public/pdf-assets/

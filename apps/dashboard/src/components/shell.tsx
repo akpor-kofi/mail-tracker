@@ -23,6 +23,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             ['/', 'Conversations'],
             ['/compose', 'Compose'],
             ['/drafts', 'Drafts'],
+ ['/documents', 'Documents'],
+ ['/reports', 'Reports'],
             ['/settings', 'Settings'],
           ].map(([href, label]) => (
             <Link key={href} href={href} aria-current={pathname === href ? 'page' : undefined}>

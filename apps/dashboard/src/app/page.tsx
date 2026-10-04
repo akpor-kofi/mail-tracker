@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Shell } from '@/components/shell';
 import { client, unwrap } from '@/lib/api';
+import { ownerRequest } from '@/components/analytics';
 import type { components } from '@mail-tracker/api-client';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,8 @@ function statusLabel(row: Conversation) {
 }
 export default function Dashboard() {
   const [mailboxId, setMailboxId] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [notice, setNotice] = useState('');
   const qc = useQueryClient();
   const mailboxes = useQuery({
@@ -37,12 +40,13 @@ export default function Dashboard() {
     },
   });
   const conversations = useQuery({
-    queryKey: ['conversations', mailboxId],
+    queryKey: ['conversations', mailboxId, offset],
     queryFn: async () => {
-      const { api } = await client();
-      return unwrap(
-        await api.GET('/conversations', { params: { query: mailboxId ? { mailboxId } : {} } }),
+      const page = await ownerRequest<{ items: Conversation[]; hasMore: boolean }>(
+        `/conversation-pages?mailboxId=${encodeURIComponent(mailboxId)}&offset=${offset}`,
       );
+      setHasMore(page.hasMore);
+      return page.items;
     },
   });
   useEffect(() => {
@@ -105,7 +109,10 @@ export default function Dashboard() {
           <Label htmlFor="mailbox-filter">Mailbox</Label>
           <Select
             value={mailboxId || 'all'}
-            onValueChange={(value) => setMailboxId(value === 'all' ? '' : value)}
+            onValueChange={(value) => {
+              setMailboxId(value === 'all' ? '' : value);
+              setOffset(0);
+            }}
           >
             <SelectTrigger id="mailbox-filter" className="w-full">
               <SelectValue placeholder="All mailboxes" />
@@ -175,6 +182,23 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+      <div className="toolbar">
+        <Button
+          variant="outline"
+          disabled={offset === 0 || conversations.isFetching}
+          onClick={() => setOffset(Math.max(0, offset - 50))}
+        >
+          Previous
+        </Button>
+        <span>Page {offset / 50 + 1}</span>
+        <Button
+          variant="outline"
+          disabled={!hasMore || conversations.isFetching}
+          onClick={() => setOffset(offset + 50)}
+        >
+          Next
+        </Button>
+      </div>
     </Shell>
   );
 }

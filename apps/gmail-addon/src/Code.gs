@@ -107,6 +107,17 @@ function composeCard(e) {
     )
     .addWidget(CardService.newTextInput().setFieldName('subject').setTitle('Subject for dashboard'))
     .addWidget(
+      CardService.newTextInput()
+        .setFieldName('link_url')
+        .setTitle('Optional link to insert (https://…)'),
+    )
+    .addWidget(CardService.newTextInput().setFieldName('link_text').setTitle('Link label'))
+    .addWidget(
+      CardService.newTextParagraph().setText(
+        'Only the link entered here is tracked. Existing draft links are unchanged.',
+      ),
+    )
+    .addWidget(
       CardService.newTextButton()
         .setText('Insert tracking image')
         .setOnClickAction(CardService.newAction().setFunctionName('insertPixel')),
@@ -133,12 +144,36 @@ function insertPixel(e) {
   } catch (error) {
     return notice_(error.message || 'Could not connect to Mail Tracker. Try again shortly.');
   }
+  var link = '';
+  var destination = formValue_(e, 'link_url').trim();
+  if (destination) {
+    try {
+      var tracked = post_('link', {
+        identityToken: ScriptApp.getIdentityToken(),
+        conversationId: result.conversationId,
+        destination: destination,
+      });
+      var label = formValue_(e, 'link_text') || 'View link';
+      link =
+        '<p><a href="' +
+        tracked.url +
+        '">' +
+        label
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;') +
+        '</a></p>';
+    } catch (error) {
+      return notice_(error.message || 'Could not create tracked link.');
+    }
+  }
   var image =
     '<img src="' + result.pixelUrl + '" width="1" height="1" alt="" style="display:none" />';
   return CardService.newUpdateDraftActionResponseBuilder()
     .setUpdateDraftBodyAction(
       CardService.newUpdateDraftBodyAction()
-        .addUpdateContent(image, CardService.ContentType.MUTABLE_HTML)
+        .addUpdateContent(link + image, CardService.ContentType.MUTABLE_HTML)
         .setUpdateType(CardService.UpdateDraftBodyType.INSERT_AT_END),
     )
     .build();

@@ -13,7 +13,7 @@ COPY packages packages
 COPY tests tests
 RUN pnpm --filter api-client generate
 RUN BETTER_AUTH_SECRET=build-only-placeholder-secret-not-used-in-production PUBLIC_URL=https://example.invalid DATABASE_URL=postgres://unused:unused@localhost/unused pnpm --filter dashboard build
-RUN mkdir -p apps/dashboard/.next/standalone/apps/dashboard/.next && cp -r apps/dashboard/.next/static apps/dashboard/.next/standalone/apps/dashboard/.next/static
+RUN mkdir -p apps/dashboard/.next/standalone/apps/dashboard/.next && cp -r apps/dashboard/.next/static apps/dashboard/.next/standalone/apps/dashboard/.next/static && cp -r apps/dashboard/public apps/dashboard/.next/standalone/apps/dashboard/public
 
 FROM node:22-alpine
 WORKDIR /repo

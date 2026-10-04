@@ -1,5 +1,7 @@
 'use client';
 import Link from 'next/link';
+import { ConversationOutcomes } from '@/components/outcomes';
+import { ConversationAnalytics } from '@/components/analytics';
 import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
@@ -11,7 +13,7 @@ export default function ConversationPage() {
   const detail = useQuery({
     queryKey: ['conversation', params.id],
     refetchInterval: (query) =>
-      query.state.data?.deliveries.some((delivery) => delivery.status === 'pending') ? 2000 : false,
+      query.state.data?.deliveries.some((delivery) => delivery.status === 'pending') ? 2000 : 15000,
     queryFn: async () => {
       const { api } = await client();
       return unwrap(
@@ -101,7 +103,9 @@ export default function ConversationPage() {
                 </div>
               ))}
             </div>
-            <h2>Image requests</h2>
+            <ConversationAnalytics id={params.id} />
+            <ConversationOutcomes id={params.id} deliveries={row.deliveries} />
+            <h2>Deduplicated image history</h2>
             {row.events.length ? (
               <ol className="timeline">
                 {row.events.map((event, i) => (

@@ -2,6 +2,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Shell } from '@/components/shell';
+import { ownerRequest } from '@/components/analytics';
 import { client, unwrap } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -18,6 +19,22 @@ import {
 } from '@/components/ui/alert-dialog';
 export default function Settings() {
   const qc = useQueryClient();
+  const health = useQuery({
+    queryKey: ['mailboxes-health'],
+    queryFn: () =>
+      ownerRequest<
+        {
+          id: string;
+          email: string;
+          syncEnabled: boolean;
+          syncStatus: string;
+          lastSyncAt: string | null;
+          addonPaired: boolean;
+          error: string;
+        }[]
+      >('/mailboxes/health'),
+    refetchInterval: 30000,
+  });
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const mailboxes = useQuery({
@@ -133,6 +150,70 @@ export default function Settings() {
           a code above. The add-on can prepare a Gmail draft, but cannot confirm when Gmail sends
           it.
         </p>
+      </section>
+      <section>
+        <h2>Connection and reply synchronization</h2>
+        <p>
+          Read synchronization is optional. Enabling it requests Gmail read access to match replies
+          and delivery reports. Send-only connections keep working without it. Google verification
+          requirements apply to broader public use.
+        </p>
+        {health.isPending ? (
+          <p>Loading connection health…</p>
+        ) : health.isError ? (
+          <p role="alert">{health.error.message}</p>
+        ) : (
+          health.data?.map((m) => (
+            <div className="detail-row" key={m.id}>
+              <div>
+                <strong>{m.email}</strong>
+                <p>
+                  Add-on {m.addonPaired ? 'paired' : 'not paired'} ·{' '}
+                  {m.syncEnabled ? `Read sync: ${m.syncStatus}` : 'Send-only connection'}
+                </p>
+                <p>
+                  {m.lastSyncAt
+                    ? `Last synced ${new Date(m.lastSyncAt).toLocaleString()}`
+                    : 'No successful read sync yet'}
+                </p>
+                {m.error && m.syncEnabled && <p role="status">{m.error}</p>}
+              </div>
+              {m.syncEnabled ? (
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await ownerRequest(`/mailboxes/${m.id}/pause-sync`, { method: 'POST' });
+                      await health.refetch();
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  Pause sync
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      const v = await ownerRequest<{ url: string }>('/mailboxes/connect-read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mailboxId: m.id }),
+                      });
+                      location.href = v.url;
+                    } catch (e) {
+                      setError(String(e));
+                    }
+                  }}
+                >
+                  Reconnect with read access
+                </Button>
+              )}
+            </div>
+          ))
+        )}
       </section>
     </Shell>
   );

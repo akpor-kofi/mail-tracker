@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Shell } from '@/components/shell';
 import { Editor } from '@/components/editor';
+import { ownerRequest } from '@/components/analytics';
 import { client, unwrap } from '@/lib/api';
 import type { components } from '@mail-tracker/api-client';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,18 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 type Draft = components['schemas']['DraftInput'];
-const blank: Draft = { mailboxId: '', to: [], cc: [], bcc: [], subject: '', html: '<p></p>' };
+type HostedDocument = { id: string; filename: string };
+const blank: Draft = {
+  mailboxId: '',
+  to: [],
+  cc: [],
+  bcc: [],
+  subject: '',
+  html: '<p></p>',
+  trackLinks: true,
+  trackConversions: false,
+  trackedDocuments: [],
+};
 function addresses(value: string) {
   return value
     .split(',')
@@ -51,6 +63,10 @@ function Composer() {
       const { api } = await client();
       return unwrap(await api.GET('/mailboxes'));
     },
+  });
+  const documents = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => ownerRequest<HostedDocument[]>('/documents'),
   });
   const loaded = useQuery({
     queryKey: ['draft', draftId],
@@ -273,6 +289,66 @@ function Composer() {
           </Label>
           <div className="form-field">
             <Label htmlFor="message-editor">Message</Label>
+            <label className="tracking-option">
+              <input
+                type="checkbox"
+                checked={draft.trackConversions ?? false}
+                onChange={(e) => update('trackConversions', e.target.checked)}
+              />{' '}
+              Pass an opaque conversion reference to linked websites
+            </label>
+            <p className="muted">
+              Requires link tracking and an integration on the destination site. This adds mt_ref to
+              eligible link URLs; leave it off for signed or one-time links.
+            </p>
+            <fieldset>
+              <legend>Tracked documents</legend>
+              <p>
+                These files are sent as hosted links, with a distinct share for each delivery. Links
+                expire in 30 days; downloads are offered.
+              </p>
+              {documents.isPending ? (
+                <p>Loading document library…</p>
+              ) : documents.isError ? (
+                <p role="alert">
+                  Could not load documents.{' '}
+                  <Button variant="link" onClick={() => documents.refetch()}>
+                    Retry
+                  </Button>
+                </p>
+              ) : (
+                documents.data?.map((doc) => (
+                  <label className="tracking-option" key={doc.id}>
+                    <input
+                      type="checkbox"
+                      checked={draft.trackedDocuments?.includes(doc.id) ?? false}
+                      onChange={(e) =>
+                        update(
+                          'trackedDocuments',
+                          e.target.checked
+                            ? [...(draft.trackedDocuments ?? []), doc.id]
+                            : (draft.trackedDocuments ?? []).filter((id) => id !== doc.id),
+                        )
+                      }
+                    />
+                    {doc.filename}
+                  </label>
+                ))
+              )}
+              <Link href="/documents">Upload or manage documents</Link>
+            </fieldset>
+            <label className="tracking-option">
+              <input
+                type="checkbox"
+                checked={draft.trackLinks ?? false}
+                onChange={(e) => update('trackLinks', e.target.checked)}
+              />{' '}
+              Track HTTP/HTTPS links
+            </label>
+            <p className="muted">
+              Tracked links are attributed to this delivery. Exclude signed, one-time or sensitive
+              links by turning this off.
+            </p>
             <Editor value={draft.html} onChange={(html) => update('html', html)} />
           </div>
           <Label htmlFor="attachments">
