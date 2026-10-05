@@ -1,6 +1,7 @@
 'use client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { components } from '@mail-tracker/api-client';
 import { Shell } from '@/components/shell';
 import { ownerRequest } from '@/components/analytics';
 import { client, unwrap } from '@/lib/api';
@@ -21,22 +22,43 @@ export default function Settings() {
   const qc = useQueryClient();
   const health = useQuery({
     queryKey: ['mailboxes-health'],
-    queryFn: () =>
-      ownerRequest<
-        {
-          id: string;
-          email: string;
-          syncEnabled: boolean;
-          syncStatus: string;
-          lastSyncAt: string | null;
-          addonPaired: boolean;
-          error: string;
-        }[]
-      >('/mailboxes/health'),
+    queryFn: () => ownerRequest<components['schemas']['MailboxHealth'][]>('/mailboxes/health'),
     refetchInterval: 30000,
   });
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [reconnecting, setReconnecting] = useState('');
+  useEffect(() => {
+    const query = new URLSearchParams(location.search);
+    const oauthError = query.get('oauthError');
+    if (oauthError === 'send_permission_missing') {
+      setError(
+        'Google did not grant sending permission. Reconnect Gmail and select permission to send email on your behalf. Your previous connection was kept.',
+      );
+    } else if (oauthError === 'read_permission_missing') {
+      setError(
+        'Google did not grant read access. Reconnect with read access and select both reading and sending permissions. Your previous connection was kept.',
+      );
+    } else if (query.has('connected')) {
+      setNotice('Gmail connected with sending permission. You can try the failed message again.');
+    }
+  }, []);
+  async function reconnect(mailboxId: string) {
+    try {
+      setError('');
+      setReconnecting(mailboxId);
+      const data = await ownerRequest<{ url: string }>('/mailboxes/reconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mailboxId }),
+      });
+      location.href = data.url;
+    } catch (e) {
+      setError(String(e));
+      setReconnecting('');
+    }
+  }
   const mailboxes = useQuery({
     queryKey: ['mailboxes'],
     queryFn: async () => {
@@ -91,6 +113,11 @@ export default function Settings() {
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {notice && (
+        <Alert role="status">
+          <AlertDescription>{notice}</AlertDescription>
         </Alert>
       )}
       {code && (
@@ -169,7 +196,14 @@ export default function Settings() {
                 <strong>{m.email}</strong>
                 <p>
                   Add-on {m.addonPaired ? 'paired' : 'not paired'} ·{' '}
-                  {m.syncEnabled ? `Read sync: ${m.syncStatus}` : 'Send-only connection'}
+                  {m.syncEnabled ? `Read sync: ${m.syncStatus}` : 'Read sync off'}
+                </p>
+                <p role={m.sendPermission === 'missing' ? 'alert' : undefined}>
+                  {m.sendPermission === 'granted'
+                    ? 'Sending permission granted'
+                    : m.sendPermission === 'missing'
+                      ? 'Sending permission missing. Reconnect Gmail and allow sending email on your behalf.'
+                      : 'Sending permission has not been verified. Reconnect Gmail if sending fails.'}
                 </p>
                 <p>
                   {m.lastSyncAt
@@ -178,39 +212,48 @@ export default function Settings() {
                 </p>
                 {m.error && m.syncEnabled && <p role="status">{m.error}</p>}
               </div>
-              {m.syncEnabled ? (
+              <div className="actions">
                 <Button
                   variant="outline"
-                  onClick={async () => {
-                    try {
-                      await ownerRequest(`/mailboxes/${m.id}/pause-sync`, { method: 'POST' });
-                      await health.refetch();
-                    } catch (e) {
-                      setError(String(e));
-                    }
-                  }}
+                  disabled={reconnecting !== ''}
+                  onClick={() => reconnect(m.id)}
                 >
-                  Pause sync
+                  {reconnecting === m.id ? 'Opening Google…' : 'Reconnect Gmail'}
                 </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      const v = await ownerRequest<{ url: string }>('/mailboxes/connect-read', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mailboxId: m.id }),
-                      });
-                      location.href = v.url;
-                    } catch (e) {
-                      setError(String(e));
-                    }
-                  }}
-                >
-                  Reconnect with read access
-                </Button>
-              )}
+                {m.syncEnabled ? (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await ownerRequest(`/mailboxes/${m.id}/pause-sync`, { method: 'POST' });
+                        await health.refetch();
+                      } catch (e) {
+                        setError(String(e));
+                      }
+                    }}
+                  >
+                    Pause sync
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const v = await ownerRequest<{ url: string }>('/mailboxes/connect-read', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ mailboxId: m.id }),
+                        });
+                        location.href = v.url;
+                      } catch (e) {
+                        setError(String(e));
+                      }
+                    }}
+                  >
+                    Enable read sync
+                  </Button>
+                )}
+              </div>
             </div>
           ))
         )}

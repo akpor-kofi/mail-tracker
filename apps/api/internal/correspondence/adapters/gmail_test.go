@@ -129,3 +129,20 @@ func TestBuildMIMESanitizesAndAppendsPixel(t *testing.T) {
 		t.Fatalf("bad sanitized HTML: %q", body)
 	}
 }
+
+func TestGmailScopeFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		body         string
+		scopeFailure bool
+	}{
+		{`{"error":{"details":[{"reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}`, true},
+		{`{"error":{"errors":[{"reason":"insufficientPermissions"}]}}`, true},
+		{`{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`, false},
+		{`{"error":{"errors":[{"reason":"domainPolicy"}]}}`, false},
+		{`invalid response`, false},
+	} {
+		if got := insufficientSendScope([]byte(tc.body)); got != tc.scopeFailure {
+			t.Fatalf("classification %q: got %v", tc.body, got)
+		}
+	}
+}

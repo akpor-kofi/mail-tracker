@@ -566,6 +566,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mailboxes/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reconnectMailbox"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mailboxes/connect-read": {
         parameters: {
             query?: never;
@@ -896,6 +912,8 @@ export interface components {
             /** Format: date-time */
             lastSyncAt: string | null;
             addonPaired: boolean;
+            /** @enum {string} */
+            sendPermission: "granted" | "missing" | "unknown";
         };
         Reminder: {
             id: string;
@@ -2200,6 +2218,67 @@ export interface operations {
                     "application/json": {
                         done: boolean;
                     };
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reconnectMailbox: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    mailboxId: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful operation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectURL"];
                 };
             };
             /** @description Invalid input */

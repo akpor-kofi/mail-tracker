@@ -31,7 +31,7 @@ func (r Postgres) Upsert(ctx context.Context, m domain.Mailbox, encrypted []byte
 	return err
 }
 func (r Postgres) List(ctx context.Context, owner string) ([]domain.Mailbox, error) {
-	rows, err := r.Pool.Query(ctx, `SELECT id,owner_id,google_sub,email,connected_at FROM mailboxes WHERE owner_id=$1 ORDER BY email`, owner)
+	rows, err := r.Pool.Query(ctx, `SELECT id,owner_id,google_sub,email,connected_at,granted_scopes,sync_enabled FROM mailboxes WHERE owner_id=$1 ORDER BY email`, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func (r Postgres) List(ctx context.Context, owner string) ([]domain.Mailbox, err
 	out := []domain.Mailbox{}
 	for rows.Next() {
 		var m domain.Mailbox
-		if err := rows.Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt, &m.GrantedScopes, &m.SyncEnabled); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -49,7 +49,7 @@ func (r Postgres) List(ctx context.Context, owner string) ([]domain.Mailbox, err
 func (r Postgres) Get(ctx context.Context, id string) (domain.Mailbox, []byte, error) {
 	var m domain.Mailbox
 	var encrypted []byte
-	err := r.Pool.QueryRow(ctx, `SELECT id,owner_id,google_sub,email,connected_at,encrypted_refresh_token FROM mailboxes WHERE id=$1`, id).Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt, &encrypted)
+	err := r.Pool.QueryRow(ctx, `SELECT id,owner_id,google_sub,email,connected_at,encrypted_refresh_token,granted_scopes,sync_enabled FROM mailboxes WHERE id=$1`, id).Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt, &encrypted, &m.GrantedScopes, &m.SyncEnabled)
 	return m, encrypted, err
 }
 func (r Postgres) Delete(ctx context.Context, owner, id string) error {
@@ -64,7 +64,7 @@ func (r Postgres) Delete(ctx context.Context, owner, id string) error {
 }
 func (r Postgres) FindByGoogleSub(ctx context.Context, sub string) (domain.Mailbox, error) {
 	var m domain.Mailbox
-	err := r.Pool.QueryRow(ctx, `SELECT id,owner_id,google_sub,email,connected_at FROM mailboxes WHERE google_sub=$1`, sub).Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt)
+	err := r.Pool.QueryRow(ctx, `SELECT id,owner_id,google_sub,email,connected_at,granted_scopes,sync_enabled FROM mailboxes WHERE google_sub=$1`, sub).Scan(&m.ID, &m.OwnerID, &m.GoogleSub, &m.Email, &m.ConnectedAt, &m.GrantedScopes, &m.SyncEnabled)
 	return m, err
 }
 

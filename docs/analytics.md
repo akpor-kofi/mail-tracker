@@ -74,6 +74,8 @@ The API enforces a five-minute timestamp tolerance, constant-time signature veri
 
 Existing accounts stay send-only. Settings shows pairing/sync health and allows a separate read-access reconnect for the same Google account. Add `gmail.readonly` to your OAuth consent configuration/test account access as necessary. Google authorization must grant it before sync starts. Restricted-scope verification requirements depend on your deployment and Google application setup.
 
+If Gmail rejects a dashboard send with `ACCESS_TOKEN_SCOPE_INSUFFICIENT`, use **Settings → Reconnect Gmail** for that mailbox and grant sending permission. This reconnect preserves the account ID, tracked messages, add-on pairing, and the current read-sync choice. Google grants are validated before replacing stored credentials; incomplete grants leave the previous connection intact. Legacy connections with no recorded scopes show an unverified permission state. Scope failures are definite failed sends, retain the draft, and are never automatically resent. Other Gmail 403 errors (for example quota failures) remain separate.
+
 A minute worker polls history, handles expired history with a bounded 30-day/1,000-message recovery, and matches only tracked Gmail threads. Replies require recipient sender/reference matches and exclude own/obvious automatic mail. DSN bounces require failed delivery status and matching recipients/references. It cannot establish recipient spam placement. Missing evidence stays unknown. Sync errors become reconnect/health states. Manual reminders appear in Reports and are suppressed after a recorded reply or unreversed outcome; they do not send email or push notifications.
 
 ## Deployment and follow-up work

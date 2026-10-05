@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/akpor-kofi/mail-tracker/apps/api/internal/analytics"
 	"github.com/akpor-kofi/mail-tracker/apps/api/internal/documents"
@@ -50,6 +51,9 @@ func safeDeliveryError(status, stored string) *string {
 	}
 	if status == "unknown" {
 		return ptr("Send status unknown; check Gmail Sent before trying again")
+	}
+	if status == "failed" && stored == corrapp.SendPermissionError {
+		return ptr(corrapp.SendPermissionError)
 	}
 	return ptr("Gmail send failed; check the mailbox connection and try a new send")
 }
@@ -141,6 +145,12 @@ func (s *Server) OAuthCallback(c fiber.Ctx) error {
 	email, err := s.Mailbox.Complete(c.Context(), c.Query("state"), c.Query("code"))
 	if err != nil {
 		log.Printf("Google OAuth callback: %v", err)
+		if errors.Is(err, mailboxapp.ErrSendPermission) {
+			return c.Redirect().To("/settings?oauthError=send_permission_missing")
+		}
+		if errors.Is(err, mailboxapp.ErrReadPermission) {
+			return c.Redirect().To("/settings?oauthError=read_permission_missing")
+		}
 		return fiber.NewError(400, "Gmail connection failed. Please try again.")
 	}
 	return c.Redirect().To("/settings?connected=" + url.QueryEscape(email))

@@ -1,11 +1,25 @@
 package httpapi
 
 import (
+	mailboxapp "github.com/akpor-kofi/mail-tracker/apps/api/internal/mailboxes/application"
 	"github.com/gofiber/fiber/v3"
 	"time"
 )
 
 func (s *Server) RegisterSync(r fiber.Router) {
+	r.Post("/mailboxes/reconnect", s.OwnerRoute(func(c fiber.Ctx) error {
+		var b struct {
+			MailboxID string `json:"mailboxId"`
+		}
+		if c.Bind().JSON(&b) != nil {
+			return fiber.NewError(400, "mailbox required")
+		}
+		u, e := s.Mailbox.StartReconnect(c.Context(), c.Locals("owner").(string), b.MailboxID)
+		if e != nil {
+			return fiber.NewError(404, "mailbox not found")
+		}
+		return c.JSON(fiber.Map{"url": u})
+	}))
 	r.Post("/mailboxes/connect-read", s.OwnerRoute(func(c fiber.Ctx) error {
 		var b struct {
 			MailboxID string `json:"mailboxId"`
@@ -20,7 +34,7 @@ func (s *Server) RegisterSync(r fiber.Router) {
 		return c.JSON(fiber.Map{"url": u})
 	}))
 	r.Get("/mailboxes/health", s.OwnerRoute(func(c fiber.Ctx) error {
-		rows, e := s.Analytics.Pool.Query(c.Context(), `SELECT m.id,m.email,m.sync_enabled,COALESCE(s.status,'not_started'),COALESCE(s.error,''),s.last_success_at,EXISTS(SELECT 1 FROM addon_pairs a WHERE a.mailbox_id=m.id) FROM mailboxes m LEFT JOIN mailbox_sync s ON s.mailbox_id=m.id WHERE m.owner_id=$1 ORDER BY m.email`, c.Locals("owner"))
+		rows, e := s.Analytics.Pool.Query(c.Context(), `SELECT m.id,m.email,m.granted_scopes,m.sync_enabled,COALESCE(s.status,'not_started'),COALESCE(s.error,''),s.last_success_at,EXISTS(SELECT 1 FROM addon_pairs a WHERE a.mailbox_id=m.id) FROM mailboxes m LEFT JOIN mailbox_sync s ON s.mailbox_id=m.id WHERE m.owner_id=$1 ORDER BY m.email`, c.Locals("owner"))
 		if e != nil {
 			return apiError(e)
 		}
@@ -29,11 +43,19 @@ func (s *Server) RegisterSync(r fiber.Router) {
 		for rows.Next() {
 			var id, email, status, msg string
 			var enabled, paired bool
+			var scopes []string
 			var at *time.Time
-			if e := rows.Scan(&id, &email, &enabled, &status, &msg, &at, &paired); e != nil {
+			if e := rows.Scan(&id, &email, &scopes, &enabled, &status, &msg, &at, &paired); e != nil {
 				return apiError(e)
 			}
-			out = append(out, fiber.Map{"id": id, "email": email, "syncEnabled": enabled, "syncStatus": status, "error": msg, "lastSyncAt": at, "addonPaired": paired})
+			permission := "unknown"
+			if len(scopes) > 0 {
+				permission = "missing"
+				if mailboxapp.HasSendPermission(scopes) {
+					permission = "granted"
+				}
+			}
+			out = append(out, fiber.Map{"id": id, "email": email, "syncEnabled": enabled, "syncStatus": status, "error": msg, "lastSyncAt": at, "addonPaired": paired, "sendPermission": permission})
 		}
 		if e := rows.Err(); e != nil {
 			return apiError(e)

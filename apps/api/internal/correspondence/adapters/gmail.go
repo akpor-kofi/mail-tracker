@@ -182,6 +182,9 @@ func (g Gmail) Send(ctx context.Context, mailboxID string, d domain.Draft, p dom
 	if err != nil {
 		return corrapp.SentMessage{}, err
 	}
+	if len(m.GrantedScopes) > 0 && !mailboxapp.HasSendPermission(m.GrantedScopes) {
+		return corrapp.SentMessage{}, corrapp.ErrSendPermission
+	}
 	raw, rfcID, err := BuildMIME(ctx, m, d, p, pixelURL, g.Attachments, m.OwnerID)
 	if err != nil {
 		return corrapp.SentMessage{}, err
@@ -209,6 +212,10 @@ func (g Gmail) Send(ctx context.Context, mailboxID string, d domain.Draft, p dom
 	if resp.StatusCode == http.StatusUnauthorized {
 		g.OAuth.ForgetToken(mailboxID)
 	}
+	if resp.StatusCode == http.StatusForbidden && insufficientSendScope(data) {
+		g.OAuth.ForgetToken(mailboxID)
+		return corrapp.SentMessage{}, corrapp.ErrSendPermission
+	}
 	if resp.StatusCode >= 500 {
 		return corrapp.SentMessage{}, fmt.Errorf("%w: Gmail API %d", corrapp.ErrAmbiguous, resp.StatusCode)
 	}
@@ -226,4 +233,32 @@ func (g Gmail) Send(ctx context.Context, mailboxID string, d domain.Draft, p dom
 		return corrapp.SentMessage{}, fmt.Errorf("%w: missing Gmail message ID", corrapp.ErrAmbiguous)
 	}
 	return corrapp.SentMessage{GmailID: sent.ID, ThreadID: sent.ThreadID, RFCMessageID: rfcID}, nil
+}
+
+// Distinguish permission failures from quota and other Gmail 403 responses.
+func insufficientSendScope(data []byte) bool {
+	var response struct {
+		Error struct {
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+			Details []struct {
+				Reason string `json:"reason"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(data, &response) != nil {
+		return false
+	}
+	for _, detail := range response.Error.Details {
+		if detail.Reason == "ACCESS_TOKEN_SCOPE_INSUFFICIENT" {
+			return true
+		}
+	}
+	for _, detail := range response.Error.Errors {
+		if detail.Reason == "insufficientPermissions" {
+			return true
+		}
+	}
+	return false
 }

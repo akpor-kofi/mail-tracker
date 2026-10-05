@@ -829,6 +829,46 @@ paths:
             ],
         },
     }
+  /mailboxes/reconnect:
+    {
+      'post':
+        {
+          'operationId': 'reconnectMailbox',
+          'responses':
+            {
+              '200':
+                {
+                  'description': 'Successful operation',
+                  'content':
+                    {
+                      'application/json':
+                        { 'schema': { '$ref': '#/components/schemas/ConnectURL' } },
+                    },
+                },
+              '400': { 'description': 'Invalid input' },
+              '401': { 'description': 'Authentication required' },
+              '404': { 'description': 'Resource not found' },
+              '429': { 'description': 'Rate limit reached' },
+              '500': { 'description': 'Internal error' },
+            },
+          'requestBody':
+            {
+              'required': true,
+              'content':
+                {
+                  'application/json':
+                    {
+                      'schema':
+                        {
+                          'type': 'object',
+                          'required': ['mailboxId'],
+                          'properties': { 'mailboxId': { 'type': 'string' } },
+                        },
+                    },
+                },
+            },
+        },
+    }
   /mailboxes/connect-read:
     {
       'post':
@@ -1437,7 +1477,16 @@ components:
       {
         'type': 'object',
         'required':
-          ['id', 'email', 'syncEnabled', 'syncStatus', 'error', 'lastSyncAt', 'addonPaired'],
+          [
+            'id',
+            'email',
+            'syncEnabled',
+            'syncStatus',
+            'error',
+            'lastSyncAt',
+            'addonPaired',
+            'sendPermission',
+          ],
         'properties':
           {
             'id': { 'type': 'string' },
@@ -1447,6 +1496,7 @@ components:
             'error': { 'type': 'string' },
             'lastSyncAt': { 'type': 'string', 'format': 'date-time', 'nullable': true },
             'addonPaired': { 'type': 'boolean' },
+            'sendPermission': { 'type': 'string', 'enum': ['granted', 'missing', 'unknown'] },
           },
       }
     Reminder:

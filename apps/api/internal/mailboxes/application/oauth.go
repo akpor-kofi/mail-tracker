@@ -17,6 +17,29 @@ import (
 	"google.golang.org/api/idtoken"
 )
 
+var ErrSendPermission = errors.New("Google did not grant Gmail sending permission")
+var ErrReadPermission = errors.New("Google did not grant Gmail read permission")
+
+// HasSendPermission accepts scopes that authorize Gmail messages.send.
+func HasSendPermission(scopes []string) bool {
+	for _, scope := range scopes {
+		switch scope {
+		case "https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.compose", "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/":
+			return true
+		}
+	}
+	return false
+}
+func hasReadPermission(scopes []string) bool {
+	for _, scope := range scopes {
+		switch scope {
+		case "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.modify", "https://mail.google.com/":
+			return true
+		}
+	}
+	return false
+}
+
 type OAuthService struct {
 	Repo                            Repository
 	Sealer                          platformcrypto.Sealer
@@ -35,16 +58,25 @@ func random() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 func (s OAuthService) Start(ctx context.Context, owner string) (string, error) {
-	return s.start(ctx, owner, "")
+	return s.start(ctx, owner, "", false)
 }
 func (s OAuthService) StartRead(ctx context.Context, owner, mailbox string) (string, error) {
 	m, _, e := s.Repo.Get(ctx, mailbox)
 	if e != nil || m.OwnerID != owner {
 		return "", errors.New("mailbox not found")
 	}
-	return s.start(ctx, owner, mailbox)
+	return s.start(ctx, owner, mailbox, true)
 }
-func (s OAuthService) start(ctx context.Context, owner, readMailbox string) (string, error) {
+
+// StartReconnect repairs the same account and preserves its existing read-sync choice.
+func (s OAuthService) StartReconnect(ctx context.Context, owner, mailbox string) (string, error) {
+	m, _, e := s.Repo.Get(ctx, mailbox)
+	if e != nil || m.OwnerID != owner {
+		return "", errors.New("mailbox not found")
+	}
+	return s.start(ctx, owner, mailbox, m.SyncEnabled)
+}
+func (s OAuthService) start(ctx context.Context, owner, mailbox string, read bool) (string, error) {
 	state, err := random()
 	if err != nil {
 		return "", err
@@ -55,17 +87,21 @@ func (s OAuthService) start(ctx context.Context, owner, readMailbox string) (str
 	}
 	hash := sha256.Sum256([]byte(state))
 	storedVerifier := verifier
-	if readMailbox != "" {
-		storedVerifier = "read:" + readMailbox + ":" + verifier
+	if mailbox != "" {
+		purpose := "send"
+		if read {
+			purpose = "read"
+		}
+		storedVerifier = purpose + ":" + mailbox + ":" + verifier
 	}
 	if err := s.Repo.SaveState(ctx, hash[:], owner, storedVerifier, time.Now().Add(10*time.Minute)); err != nil {
 		return "", err
 	}
 	cfg := s.Config()
-	if readMailbox != "" {
+	if read {
 		cfg.Scopes = append(cfg.Scopes, "https://www.googleapis.com/auth/gmail.readonly")
 	}
-	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.S256ChallengeOption(verifier)), nil
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce, oauth2.SetAuthURLParam("include_granted_scopes", "true"), oauth2.S256ChallengeOption(verifier)), nil
 }
 func (s OAuthService) Complete(ctx context.Context, state, code string) (string, error) {
 	hash := sha256.Sum256([]byte(state))
@@ -73,18 +109,28 @@ func (s OAuthService) Complete(ctx context.Context, state, code string) (string,
 	if err != nil {
 		return "", errors.New("invalid or expired OAuth state")
 	}
-	readMailbox := ""
-	if strings.HasPrefix(verifier, "read:") {
+	mailbox := ""
+	read := strings.HasPrefix(verifier, "read:")
+	if read || strings.HasPrefix(verifier, "send:") {
 		parts := strings.SplitN(verifier, ":", 3)
 		if len(parts) != 3 {
 			return "", errors.New("invalid OAuth state")
 		}
-		readMailbox = parts[1]
+		mailbox = parts[1]
 		verifier = parts[2]
 	}
 	token, err := s.Config().Exchange(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return "", err
+	}
+	scopes, _ := token.Extra("scope").(string)
+	granted := strings.Fields(scopes)
+	// Validate the actual grant before replacing a previously working connection.
+	if !HasSendPermission(granted) {
+		return "", ErrSendPermission
+	}
+	if read && !hasReadPermission(granted) {
+		return "", ErrReadPermission
 	}
 	if token.RefreshToken == "" {
 		return "", errors.New("Google did not return an offline refresh token; revoke prior access and reconnect")
@@ -109,24 +155,13 @@ func (s OAuthService) Complete(ctx context.Context, state, code string) (string,
 	if err != nil {
 		return "", err
 	}
-	scopes, _ := token.Extra("scope").(string)
-	granted := strings.Fields(scopes)
-	syncEnabled := false
-	if readMailbox != "" {
-		m, _, e := s.Repo.Get(ctx, readMailbox)
+	if mailbox != "" {
+		m, _, e := s.Repo.Get(ctx, mailbox)
 		if e != nil || m.OwnerID != owner || m.GoogleSub != identity.Subject {
-			return "", errors.New("choose the Gmail account that requested reply synchronization")
-		}
-		for _, scope := range granted {
-			if scope == "https://www.googleapis.com/auth/gmail.readonly" {
-				syncEnabled = true
-			}
-		}
-		if !syncEnabled {
-			return "", errors.New("Google did not grant the requested read access")
+			return "", errors.New("choose the Gmail account that requested reconnection")
 		}
 	}
-	m := domain.Mailbox{GrantedScopes: granted, SyncEnabled: syncEnabled, ID: uuid.NewString(), OwnerID: owner, GoogleSub: identity.Subject, Email: email}
+	m := domain.Mailbox{GrantedScopes: granted, SyncEnabled: read, ID: uuid.NewString(), OwnerID: owner, GoogleSub: identity.Subject, Email: email}
 	if err := s.Repo.Upsert(ctx, m, encrypted); err != nil {
 		return "", err
 	}

@@ -202,3 +202,23 @@ func TestSendReturnsBeforeBoundedWorkersFinish(t *testing.T) {
 		t.Fatalf("ran %d concurrent sends", sender.peak.Load())
 	}
 }
+
+func TestMissingSendPermissionIsDefiniteFailureAndKeepsDraft(t *testing.T) {
+	repo := &fakeRepo{}
+	sender := &fakeSender{failures: map[string]error{"a@example.com": ErrSendPermission}}
+	service := Service{Repo: repo, Sender: sender, PublicURL: "https://example.com"}
+	d := domain.Draft{ID: "draft", MailboxID: "m", To: []string{"a@example.com"}, Subject: "Hi"}
+	if _, err := service.Send(context.Background(), "owner", "key", "shared", d); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, repo.finished)
+	recorded, _ := repo.GetResult(context.Background(), "owner", "conversation")
+	if recorded.Deliveries[0].Status != "failed" || recorded.Deliveries[0].Error != SendPermissionError {
+		t.Fatalf("wrong permission recovery: %+v", recorded)
+	}
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if sender.calls.Load() != 1 || repo.deleted {
+		t.Fatal("permission failure retried send or removed draft")
+	}
+}

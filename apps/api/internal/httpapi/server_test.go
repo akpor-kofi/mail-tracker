@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	corrapp "github.com/akpor-kofi/mail-tracker/apps/api/internal/correspondence/application"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -67,5 +68,16 @@ func TestStoredDeliveryErrorIsNotExposed(t *testing.T) {
 		if message == nil || strings.Contains(*message, "fk_deliveries") || strings.Contains(*message, "adapter") {
 			t.Fatalf("%s leaked stored error: %v", status, message)
 		}
+	}
+}
+
+func TestSafePermissionRecoveryMessage(t *testing.T) {
+	message := safeDeliveryError("failed", corrapp.SendPermissionError)
+	if message == nil || *message != corrapp.SendPermissionError {
+		t.Fatal("permission recovery message lost")
+	}
+	message = safeDeliveryError("unknown", corrapp.SendPermissionError)
+	if message == nil || !strings.Contains(*message, "check Gmail Sent") {
+		t.Fatal("uncertain send lost duplicate-send warning")
 	}
 }

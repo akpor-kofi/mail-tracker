@@ -38,6 +38,10 @@ type Repository interface {
 	UpdateDelivery(context.Context, string, string, SentMessage, string) error
 }
 
+const SendPermissionError = "Gmail sending permission is missing. Reconnect this account in Settings and allow sending mail, then try a new send."
+
+var ErrSendPermission = errors.New(SendPermissionError)
+
 var ErrAmbiguous = errors.New("send outcome uncertain")
 
 type ValidationError struct{ Message string }
@@ -158,6 +162,9 @@ func (s Service) run(owner string, d domain.Draft, plans []domain.PlannedDeliver
 			status = "failed"
 			log.Printf("Gmail send failed for delivery %s: %v", deliveries[i].ID, outcome.err)
 			errText = "Gmail send failed; check the mailbox connection and try a new send"
+			if errors.Is(outcome.err, ErrSendPermission) {
+				errText = SendPermissionError
+			}
 			var ne net.Error
 			if errors.Is(outcome.err, ErrAmbiguous) || errors.Is(outcome.err, context.DeadlineExceeded) || errors.Is(outcome.err, context.Canceled) || errors.As(outcome.err, &ne) {
 				status = "unknown"
